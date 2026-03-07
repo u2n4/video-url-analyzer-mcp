@@ -1202,6 +1202,11 @@ def execute_tutorial_steps(
 # Entry point
 # ---------------------------------------------------------------------------
 
-if __name__ == "__main__":
+def main():
+    """Entry point for the MCP server."""
     logger.info("Starting Video Analyzer MCP Server...")
     mcp.run()
+
+
+if __name__ == "__main__":
+    main()

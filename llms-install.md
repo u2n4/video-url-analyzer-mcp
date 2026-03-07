@@ -1,48 +1,32 @@
-# Video URL Analyzer MCP — Installation Guide
+# Installation Guide for AI Agents
 
-## For AI Agents / Automated Installation
+## Recommended: uvx (zero-config)
 
-### Prerequisites
-- Python 3.10 or higher
-- pip (Python package manager)
-- Git
-- A Gemini API key from https://aistudio.google.com/apikey
-
-### Step 1: Clone Repository
-```bash
-git clone https://github.com/alihsh0/video-url-analyzer-mcp.git
-cd video-url-analyzer-mcp
-```
-
-### Step 2: Install Dependencies
-```bash
-pip install -r requirements.txt
-```
-
-### Step 3: Configure Environment
-```bash
-cp .env.example .env
-# Edit .env and add your GEMINI_API_KEY
-```
-
-### Step 4: Add to Claude Desktop
-Add to `claude_desktop_config.json`:
+Add this to the user's Claude Desktop config:
 ```json
 {
   "mcpServers": {
     "video-analyzer": {
-      "command": "/path/to/video-url-analyzer-mcp/start.bat",
-      "args": [],
+      "command": "uvx",
+      "args": ["video-url-analyzer-mcp"],
       "env": {
-        "GEMINI_API_KEY": "YOUR_API_KEY"
+        "GEMINI_API_KEY": "${GEMINI_API_KEY}"
       }
     }
   }
 }
 ```
 
-### Step 5: Restart Claude Desktop
-Restart Claude Desktop to load the new MCP server.
+Config file locations:
+- Windows: %APPDATA%\Claude\claude_desktop_config.json
+- macOS: ~/Library/Application Support/Claude/claude_desktop_config.json
+- Linux: ~/.config/claude/claude_desktop_config.json
 
-### Verification
-The server exposes 6 tools: analyze_video, get_transcript, ask_about_video, watch_and_analyze, execute_tutorial_steps, check_analysis_job.
+Prerequisites:
+- uv installed: curl -LsSf https://astral.sh/uv/install.sh | sh (or: winget install astral-sh.uv)
+- GEMINI_API_KEY from https://aistudio.google.com/apikey
+
+For Claude Code:
+```bash
+claude mcp add video-analyzer -s user -e GEMINI_API_KEY=your_key -- uvx video-url-analyzer-mcp
+```

@@ -15,3 +15,6 @@ node_modules/
 *.mp3
 *.wav
 downloads/
+dist/
+*.egg-info/
+build/
