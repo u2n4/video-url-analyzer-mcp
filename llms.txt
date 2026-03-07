@@ -1,0 +1,32 @@
+# Video URL Analyzer MCP
+
+> MCP server to analyze YouTube, TikTok & Instagram videos from URL
+
+## Overview
+
+Video URL Analyzer MCP is a Model Context Protocol server that analyzes videos from YouTube, TikTok, and Instagram using Google's Gemini API. Paste any video URL and get full audio + visual analysis, transcripts, Q&A, and tutorial step extraction.
+
+## Tools
+
+- analyze_video(url, prompt?) - Full analysis of video content
+- get_transcript(url) - Extract spoken transcript with timestamps
+- ask_about_video(url, question) - Ask specific questions about video
+- watch_and_analyze(url) - Extract tutorial steps and commands
+- execute_tutorial_steps(steps_json, confirm?) - Execute extracted steps
+- check_analysis_job(job_id) - Poll async job status
+
+## Supported Platforms
+
+- YouTube (synchronous, direct Gemini analysis)
+- TikTok (async, yt-dlp download)
+- Instagram (async, yt-dlp + curl_cffi)
+
+## Requirements
+
+- Python 3.10+
+- Gemini API key (free at aistudio.google.com)
+- yt-dlp (auto-installed)
+
+## Installation
+
+pip install -r requirements.txt
