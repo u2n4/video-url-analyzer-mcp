@@ -1,0 +1,17 @@
+__pycache__/
+*.pyc
+*.pyo
+.env
+analyses/
+*.log
+.venv/
+venv/
+mcp-config.json
+*_thumb.jpeg
+.DS_Store
+Thumbs.db
+node_modules/
+*.mp4
+*.mp3
+*.wav
+downloads/
