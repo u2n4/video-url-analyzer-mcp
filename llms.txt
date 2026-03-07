@@ -29,6 +29,4 @@ Video URL Analyzer MCP is a Model Context Protocol server that analyzes videos f
 
 ## Installation
 
-git clone https://github.com/alihsh0/video-url-analyzer-mcp.git
-cd video-url-analyzer-mcp
-python setup.py
+uvx video-url-analyzer-mcp

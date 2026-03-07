@@ -43,7 +43,7 @@ Video URL Analyzer MCP is a Model Context Protocol (MCP) server that lets Claude
 - **Bilingual** — Supports Arabic and English prompts and responses
 - **Async Jobs** — Background processing prevents Claude Desktop timeout crashes
 - **Security Hardened** — URL allowlist, SSRF protection, command injection prevention, path traversal blocking
-- **One-Click Setup** — Auto-setup script for Windows, macOS, and Linux
+- **Zero-Config Install** — `uvx video-url-analyzer-mcp` and you are running
 
 ### Supported Platforms
 
@@ -59,80 +59,66 @@ Video URL Analyzer MCP is a Model Context Protocol (MCP) server that lets Claude
 
 ## Quick Start
 
-### Auto-Setup (Recommended)
+### Option 1: uvx (Recommended)
 
-Clone and run the setup script — it installs dependencies, configures your API key, and adds the server to Claude Desktop automatically:
+Requires [uv](https://docs.astral.sh/uv/getting-started/installation/).
 
-```bash
-git clone https://github.com/alihsh0/video-url-analyzer-mcp.git
-cd video-url-analyzer-mcp
-python setup.py
-```
-
-### One-Click Install (Windows)
-
-```powershell
-irm https://raw.githubusercontent.com/alihsh0/video-url-analyzer-mcp/main/install.ps1 | iex
-```
-
-### Manual Install
-
-```bash
-git clone https://github.com/alihsh0/video-url-analyzer-mcp.git
-cd video-url-analyzer-mcp
-pip install -r requirements.txt
-```
-
-Create a `.env` file:
-```
-GEMINI_API_KEY=your_gemini_api_key_here
-```
-
-Get your free API key from [Google AI Studio](https://aistudio.google.com/apikey).
-
----
-
-## Integration
-
-### Claude Desktop
-
-Add to your `claude_desktop_config.json`:
-
+**Claude Desktop** -- add to `claude_desktop_config.json`:
 ```json
 {
   "mcpServers": {
     "video-analyzer": {
-      "command": "path/to/video-url-analyzer-mcp/start.bat",
-      "args": [],
+      "command": "uvx",
+      "args": ["video-url-analyzer-mcp"],
       "env": {
-        "GEMINI_API_KEY": "your_key_here"
+        "GEMINI_API_KEY": "your_key"
       }
     }
   }
 }
 ```
 
-> **Tip:** Use `start.bat` on Windows — it auto-detects the correct Python with all dependencies installed.
-
-### Claude Code
-
+**Claude Code:**
 ```bash
-claude mcp add video-analyzer --transport stdio -e GEMINI_API_KEY=your_key -- python /path/to/server.py
+claude mcp add video-analyzer -s user -e GEMINI_API_KEY=your_key -- uvx video-url-analyzer-mcp
 ```
 
-### Cursor / Windsurf
-
-Add to your MCP config:
+**Cursor / VS Code** -- add to `.cursor/mcp.json` or `.vscode/mcp.json`:
 ```json
 {
-  "video-analyzer": {
-    "command": "python",
-    "args": ["path/to/video-url-analyzer-mcp/server.py"],
-    "env": {
-      "GEMINI_API_KEY": "your_key_here"
+  "servers": {
+    "video-analyzer": {
+      "command": "uvx",
+      "args": ["video-url-analyzer-mcp"],
+      "env": { "GEMINI_API_KEY": "your_key" }
     }
   }
 }
+```
+
+**Windsurf** -- add to `~/.codeium/windsurf/mcp_config.json`:
+```json
+{
+  "mcpServers": {
+    "video-analyzer": {
+      "command": "uvx",
+      "args": ["video-url-analyzer-mcp"],
+      "env": { "GEMINI_API_KEY": "your_key" }
+    }
+  }
+}
+```
+
+### Option 2: pip install
+```bash
+pip install video-url-analyzer-mcp
+```
+
+### Option 3: From source
+```bash
+git clone https://github.com/alihsh0/video-url-analyzer-mcp.git
+cd video-url-analyzer-mcp
+pip install -e .
 ```
 
 ---
@@ -195,15 +181,15 @@ watch_and_analyze("https://www.youtube.com/watch?v=tutorial123")
 
 ```
 video-url-analyzer-mcp/
-├── server.py              # Main MCP server (all 6 tools)
-├── setup.py               # Auto-setup script (deps + config)
-├── start.bat              # Smart Windows launcher (auto-detects Python)
-├── install.ps1            # One-click PowerShell installer
-├── requirements.txt       # Python dependencies (pinned)
-├── .env.example           # Environment variable template
-├── mcp-config.example.json
-├── llms.txt               # AI-readable project summary
-├── llms-install.md        # AI-readable install guide
+├── pyproject.toml                    # Package metadata & dependencies
+├── src/
+│   └── video_url_analyzer_mcp/
+│       ├── __init__.py               # Package init + version
+│       ├── __main__.py               # python -m support
+│       └── server.py                 # Main MCP server (all 6 tools)
+├── .env.example                      # Environment variable template
+├── llms.txt                          # AI-readable project summary
+├── llms-install.md                   # AI-readable install guide
 ├── CONTRIBUTING.md
 ├── CHANGELOG.md
 └── LICENSE
@@ -232,7 +218,7 @@ This server has been hardened against a comprehensive threat model:
 | **Download Size** | Hard limit of 100 MB per video. |
 | **DoS Protection** | Max 10 concurrent background jobs. Auto-expiry after 1 hour. Storage cap of 200 analyses. |
 | **Schema Validation** | Gemini JSON responses validated before execution. Response size capped at 500K chars. |
-| **Dependencies** | All versions pinned in `requirements.txt`. |
+| **Dependencies** | All versions pinned in `pyproject.toml`. |
 
 ---
 
@@ -265,7 +251,7 @@ This server has been hardened against a comprehensive threat model:
 | `GEMINI_API_KEY not set` | Create `.env` file or pass via environment variable |
 | TikTok download fails | tikwm.com fallback activates automatically. Ensure `curl_cffi` is installed. |
 | Instagram download fails | `pip install curl_cffi` for browser impersonation support |
-| `ENOENT` on Windows | Use `start.bat` as command in Claude Desktop config |
+| `ENOENT` on Windows | Use `uvx video-url-analyzer-mcp` as the command |
 | Claude Desktop timeout | TikTok/Instagram run in background — use `check_analysis_job(job_id)` to poll |
 | Python not found | Install Python 3.10+ from [python.org](https://python.org) |
 
@@ -320,7 +306,7 @@ If you find this useful, please star this repository!
 ```bash
 git clone https://github.com/alihsh0/video-url-analyzer-mcp.git
 cd video-url-analyzer-mcp
-python setup.py
+pip install -e .
 ```
 
 ### &#x627;&#x644;&#x627;&#x645;&#x627;&#x646;
