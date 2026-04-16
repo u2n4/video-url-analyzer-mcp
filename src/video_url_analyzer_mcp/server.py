@@ -20,6 +20,9 @@ import uuid
 from datetime import datetime
 from pathlib import Path
 from urllib.parse import urlparse, parse_qs
+from urllib.request import Request as UrllibRequest
+from urllib.request import urlopen as urllib_urlopen
+from urllib.error import URLError
 
 from dotenv import load_dotenv
 from fastmcp import FastMCP
@@ -44,8 +47,27 @@ if not GEMINI_API_KEY:
 
 client = genai.Client(api_key=GEMINI_API_KEY)
 
-# Default model
-DEFAULT_MODEL = "gemini-2.5-flash"
+# Default model — alias to the latest stable Flash model (currently Gemini
+# 3 Flash gen). Fast (~1.3s overhead) with strong multimodal accuracy.
+# Override per-call with the `model` arg for anything specific.
+DEFAULT_MODEL = "gemini-flash-latest"
+
+
+def _build_analysis_config() -> types.GenerateContentConfig:
+    """High-fidelity multimodal analysis config.
+
+    - MEDIA_RESOLUTION_HIGH: processes images at the highest supported
+      resolution globally, so small on-screen text (captions, benchmark
+      tables, fine details in carousel slides) is readable.
+    - ThinkingLevel.HIGH: maximum reasoning budget for deep analysis;
+      closes most of the quality gap between Flash and Pro tiers.
+    """
+    return types.GenerateContentConfig(
+        media_resolution=types.MediaResolution.MEDIA_RESOLUTION_HIGH,
+        thinking_config=types.ThinkingConfig(
+            thinking_level=types.ThinkingLevel.HIGH,
+        ),
+    )
 
 # MCP Server
 mcp = FastMCP("video-analyzer")
@@ -250,10 +272,63 @@ def _normalize_youtube_url(url: str) -> str:
     return url
 
 
-def _download_tiktok_api(url: str, tmp_dir: str) -> str | None:
-    """Download a TikTok video using the tikwm.com API as a fallback.
+def _download_media_url(url: str, dest_path: str, timeout: int = 60) -> bytes | None:
+    """Fetch a public media URL to disk. Uses urllib (system DNS) then curl_cffi.
 
-    Returns the local file path on success, or None on failure.
+    Returns the bytes written on success, None on failure.
+    """
+    # urllib uses the OS DNS resolver, which is more reliable on Windows than
+    # curl_cffi's bundled resolver for some CDN shards (observed for IG fbcdn).
+    last_err: Exception | None = None
+    for attempt in range(3):
+        try:
+            req = UrllibRequest(
+                url,
+                headers={
+                    "User-Agent": (
+                        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                        "AppleWebKit/537.36 (KHTML, like Gecko) "
+                        "Chrome/131.0.0.0 Safari/537.36"
+                    ),
+                    "Accept": "image/avif,image/webp,image/*,*/*;q=0.8",
+                    "Accept-Language": "en-US,en;q=0.9",
+                    "Referer": "https://www.instagram.com/",
+                },
+            )
+            with urllib_urlopen(req, timeout=timeout) as resp:
+                data = resp.read()
+                if data:
+                    with open(dest_path, "wb") as f:
+                        f.write(data)
+                    return data
+                last_err = RuntimeError("empty body")
+        except URLError as e:
+            last_err = e
+        except Exception as e:
+            last_err = e
+        time.sleep(0.8 * (attempt + 1))
+
+    # Last-resort fallback: curl_cffi (impersonated TLS)
+    try:
+        from curl_cffi import requests as cffi_requests
+        r = cffi_requests.get(url, impersonate="chrome", timeout=timeout)
+        if r.status_code == 200 and r.content:
+            with open(dest_path, "wb") as f:
+                f.write(r.content)
+            return r.content
+        last_err = RuntimeError(f"curl_cffi HTTP {r.status_code}")
+    except Exception as e:
+        last_err = e
+
+    logger.warning("Failed to download %s: %s", url[:80], last_err)
+    return None
+
+
+def _download_tiktok_api(url: str, tmp_dir: str) -> list[str] | None:
+    """Download a TikTok video OR photo-slideshow using the tikwm.com API.
+
+    Returns a list of local file paths on success, or None on failure.
+    For videos, returns [video.mp4]. For photo posts, returns [img_0.jpg, ...].
     """
     try:
         from curl_cffi import requests as cffi_requests
@@ -275,9 +350,25 @@ def _download_tiktok_api(url: str, tmp_dir: str) -> str | None:
             return None
 
         video_data = data.get("data", {})
+
+        # Photo-slideshow post: tikwm returns "images" array of URLs
+        images = video_data.get("images")
+        if images and isinstance(images, list):
+            logger.info("TikTok photo post detected (%d images)", len(images))
+            paths = []
+            for i, iurl in enumerate(images):
+                p = os.path.join(tmp_dir, f"img_{i:02d}.jpg")
+                if _download_media_url(iurl, p, timeout=60):
+                    paths.append(p)
+            if paths:
+                logger.info("TikTok photos downloaded: %d files", len(paths))
+                return paths
+            return None
+
+        # Video post
         download_url = video_data.get("hdplay") or video_data.get("play")
         if not download_url:
-            logger.warning("tikwm API returned no video URL")
+            logger.warning("tikwm API returned no video or image URL")
             return None
 
         logger.info("Downloading TikTok video from tikwm API...")
@@ -288,17 +379,53 @@ def _download_tiktok_api(url: str, tmp_dir: str) -> str | None:
 
         size_mb = os.path.getsize(fpath) / 1e6
         logger.info("TikTok API download OK: %s (%.1f MB)", fpath, size_mb)
-        return fpath
+        return [fpath]
     except Exception as e:
         logger.warning("TikTok API fallback failed: %s", e)
         return None
 
 
-def _download_instagram_scrape(url: str, tmp_dir: str) -> str | None:
-    """Download an Instagram video by scraping the page with curl_cffi.
+def _extract_instagram_carousel_block(html: str) -> str | None:
+    """Return JSON substring for the carousel_media array, or None if not found.
 
-    Extracts the video URL from video_versions JSON embedded in the page HTML.
-    Returns the local file path on success, or None on failure.
+    Instagram's page HTML embeds related-post thumbnails alongside the main
+    post's media. Scoping image extraction to the carousel_media array
+    avoids picking up images from unrelated posts.
+    """
+    for key in ('"carousel_media":[', '"edge_sidecar_to_children":{"edges":['):
+        idx = html.find(key)
+        if idx < 0:
+            continue
+        start = idx + len(key)
+        depth = 1
+        i = start
+        in_string = False
+        escape = False
+        n = len(html)
+        while i < n and depth > 0:
+            c = html[i]
+            if escape:
+                escape = False
+            elif c == "\\":
+                escape = True
+            elif c == '"':
+                in_string = not in_string
+            elif not in_string:
+                if c in "[{":
+                    depth += 1
+                elif c in "]}":
+                    depth -= 1
+            i += 1
+        if depth == 0:
+            return html[start:i - 1]
+    return None
+
+
+def _download_instagram_scrape(url: str, tmp_dir: str) -> list[str] | None:
+    """Download Instagram video OR photo-carousel by scraping the page.
+
+    Returns list of local file paths on success, or None on failure.
+    For videos/reels: [video.mp4]. For photo posts/carousels: [img_0.jpg, ...].
     """
     try:
         from curl_cffi import requests as cffi_requests
@@ -313,29 +440,73 @@ def _download_instagram_scrape(url: str, tmp_dir: str) -> str | None:
             logger.warning("Instagram page returned status %d", resp.status_code)
             return None
 
-        # Try video_versions first (Reels), then video_url (posts)
-        m = re.search(r'"video_versions":\[\{[^}]*"url":"([^"]+)"', resp.text)
+        html = resp.text
+
+        # Try video first (Reels, video posts)
+        m = re.search(r'"video_versions":\[\{[^}]*"url":"([^"]+)"', html)
         if not m:
-            m = re.search(r'"video_url":"([^"]+)"', resp.text)
-        if not m:
-            logger.warning("No video URL found in Instagram page HTML")
+            m = re.search(r'"video_url":"([^"]+)"', html)
+        if m:
+            video_url = m.group(1).replace("\\/", "/").replace("\\u0026", "&")
+            logger.info("Found Instagram video URL, downloading...")
+            vid_resp = cffi_requests.get(video_url, impersonate="chrome", timeout=120)
+            if vid_resp.status_code == 200:
+                fpath = os.path.join(tmp_dir, "video.mp4")
+                with open(fpath, "wb") as f:
+                    f.write(vid_resp.content)
+                size_mb = os.path.getsize(fpath) / 1e6
+                logger.info("Instagram video download OK: %s (%.1f MB)", fpath, size_mb)
+                return [fpath]
+            logger.warning("Instagram video download returned %d", vid_resp.status_code)
+
+        # Photo post / carousel: try to extract ONLY the carousel_media block
+        # so we don't pick up thumbnails of related/suggested posts.
+        carousel_block = _extract_instagram_carousel_block(html)
+        search_text = carousel_block if carousel_block else html
+
+        # Pattern 1: image_versions2 candidates (modern Instagram JSON)
+        img_urls = re.findall(
+            r'"image_versions2":\{"candidates":\[\{[^}]*?"url":"([^"]+)"',
+            search_text,
+        )
+        # Pattern 2: display_url fallback
+        if not img_urls:
+            img_urls = re.findall(r'"display_url":"([^"]+)"', search_text)
+
+        if not img_urls:
+            logger.warning("No media URL found in Instagram page HTML")
             return None
 
-        video_url = m.group(1).replace("\\/", "/").replace("\\u0026", "&")
-        logger.info("Found Instagram video URL, downloading...")
+        # Dedupe preserving order (carousels repeat main image in metadata)
+        seen = set()
+        unique_urls = []
+        for u in img_urls:
+            clean = u.replace("\\/", "/").replace("\\u0026", "&")
+            if clean not in seen:
+                seen.add(clean)
+                unique_urls.append(clean)
 
-        vid_resp = cffi_requests.get(video_url, impersonate="chrome", timeout=120)
-        if vid_resp.status_code != 200:
-            logger.warning("Instagram video download returned status %d", vid_resp.status_code)
+        # Cap at reasonable carousel length. Real IG carousels max out at 20.
+        MAX_CAROUSEL = 20
+        if len(unique_urls) > MAX_CAROUSEL:
+            logger.info(
+                "Capping %d extracted IG images to first %d (likely includes "
+                "suggested-post thumbnails)",
+                len(unique_urls), MAX_CAROUSEL,
+            )
+            unique_urls = unique_urls[:MAX_CAROUSEL]
+
+        logger.info("Instagram photo post: %d unique images", len(unique_urls))
+        paths = []
+        for i, iurl in enumerate(unique_urls):
+            p = os.path.join(tmp_dir, f"img_{i:02d}.jpg")
+            if _download_media_url(iurl, p, timeout=60):
+                paths.append(p)
+
+        if not paths:
             return None
-
-        fpath = os.path.join(tmp_dir, "video.mp4")
-        with open(fpath, "wb") as f:
-            f.write(vid_resp.content)
-
-        size_mb = os.path.getsize(fpath) / 1e6
-        logger.info("Instagram scrape download OK: %s (%.1f MB)", fpath, size_mb)
-        return fpath
+        logger.info("Instagram photos downloaded: %d files", len(paths))
+        return paths
     except Exception as e:
         logger.warning("Instagram scrape fallback failed: %s", e)
         return None
@@ -356,8 +527,30 @@ def _check_download_size(fpath: str) -> str:
     return fpath
 
 
-def _download_video(url: str) -> str:
-    """Download a video and return the local file path.
+def _check_download_sizes(paths: list[str]) -> list[str]:
+    """Verify each file in a list is within the size limit. Returns the list."""
+    total_mb = 0.0
+    for p in paths:
+        size_mb = os.path.getsize(p) / 1e6
+        total_mb += size_mb
+    if total_mb > MAX_DOWNLOAD_SIZE_MB:
+        for p in paths:
+            try:
+                os.remove(p)
+            except OSError:
+                pass
+        raise RuntimeError(
+            f"Downloaded media too large: {total_mb:.1f} MB total "
+            f"(limit: {MAX_DOWNLOAD_SIZE_MB} MB)"
+        )
+    return paths
+
+
+def _download_video(url: str) -> list[str]:
+    """Download media (video or image set) and return list of local file paths.
+
+    For videos returns [video.mp4]. For photo posts / carousels returns
+    [img_00.jpg, img_01.jpg, ...].
 
     Strategy (fast-first):
       - TikTok:    tikwm.com API first → yt-dlp fallback
@@ -369,19 +562,19 @@ def _download_video(url: str) -> str:
     output_template = os.path.join(tmp_dir, "video.%(ext)s")
     platform = detect_platform(url)
 
-    logger.info("Downloading video from %s (platform: %s)", url, platform)
+    logger.info("Downloading media from %s (platform: %s)", url, platform)
 
     # --- Fast path: try API/scrape methods first for TikTok/Instagram ---
     if platform == "tiktok":
-        api_path = _download_tiktok_api(url, tmp_dir)
-        if api_path:
-            return _check_download_size(api_path)
+        api_paths = _download_tiktok_api(url, tmp_dir)
+        if api_paths:
+            return _check_download_sizes(api_paths)
         logger.info("TikTok API failed, falling back to yt-dlp...")
 
     if platform == "instagram":
-        scrape_path = _download_instagram_scrape(url, tmp_dir)
-        if scrape_path:
-            return _check_download_size(scrape_path)
+        scrape_paths = _download_instagram_scrape(url, tmp_dir)
+        if scrape_paths:
+            return _check_download_sizes(scrape_paths)
         logger.info("Instagram scrape failed, falling back to yt-dlp...")
 
     # --- yt-dlp path ---
@@ -466,7 +659,7 @@ def _download_video(url: str) -> str:
         if os.path.isfile(fpath):
             size_mb = os.path.getsize(fpath) / 1e6
             logger.info("Downloaded video to %s (%.1f MB)", fpath, size_mb)
-            return _check_download_size(fpath)
+            return [_check_download_size(fpath)]
 
     raise RuntimeError("Download completed but no file was found.")
 
@@ -501,21 +694,40 @@ def _upload_to_gemini(file_path: str):
     return uploaded
 
 
-def _cleanup(file_path: str = None, uploaded_file=None):
-    """Clean up temporary files and uploaded Gemini files."""
-    if file_path and os.path.exists(file_path):
+def _cleanup(file_path=None, uploaded_file=None):
+    """Clean up temporary files and uploaded Gemini files.
+
+    file_path can be a single path (str) or a list of paths.
+    uploaded_file can be a single uploaded file or a list.
+    """
+    paths = []
+    if file_path:
+        paths = file_path if isinstance(file_path, list) else [file_path]
+
+    parent = None
+    for p in paths:
+        if p and os.path.exists(p):
+            try:
+                os.remove(p)
+                parent = os.path.dirname(p)
+                logger.info("Cleaned up local file: %s", p)
+            except OSError as e:
+                logger.warning("Failed to clean up %s: %s", p, e)
+    if parent and os.path.isdir(parent) and not os.listdir(parent):
         try:
-            os.remove(file_path)
-            parent = os.path.dirname(file_path)
-            if parent and os.path.isdir(parent) and not os.listdir(parent):
-                os.rmdir(parent)
-            logger.info("Cleaned up local file: %s", file_path)
-        except OSError as e:
-            logger.warning("Failed to clean up %s: %s", file_path, e)
+            os.rmdir(parent)
+        except OSError:
+            pass
+
+    uploads = []
     if uploaded_file:
+        uploads = uploaded_file if isinstance(uploaded_file, list) else [uploaded_file]
+    for uf in uploads:
+        if uf is None:
+            continue
         try:
-            client.files.delete(name=uploaded_file.name)
-            logger.info("Deleted uploaded file: %s", uploaded_file.name)
+            client.files.delete(name=uf.name)
+            logger.info("Deleted uploaded file: %s", uf.name)
         except Exception as e:
             logger.warning("Failed to delete uploaded file: %s", e)
 
@@ -546,26 +758,49 @@ def _analyze_youtube(url: str, prompt: str, model: str) -> str:
                 types.Part(text=prompt),
             ]
         ),
+        config=_build_analysis_config(),
     )
     return _truncate_response(response.text)
 
 
 def _analyze_downloaded(url: str, prompt: str, model: str) -> str:
-    """Download a video, upload to Gemini, and analyze it."""
-    file_path = None
-    uploaded_file = None
+    """Download media (video or image carousel), upload to Gemini, analyze."""
+    file_paths: list[str] = []
+    uploaded_files: list = []
     try:
-        file_path = _download_video(url)
-        uploaded_file = _upload_to_gemini(file_path)
+        file_paths = _download_video(url)
+        is_images = bool(file_paths) and all(
+            p.lower().endswith((".jpg", ".jpeg", ".png", ".webp"))
+            for p in file_paths
+        )
 
-        logger.info("Analyzing uploaded video (model: %s)...", model)
+        if is_images and len(file_paths) > 1:
+            logger.info(
+                "Analyzing %d images as a carousel (model: %s)...",
+                len(file_paths), model,
+            )
+            image_prompt = (
+                f"The following {len(file_paths)} images are slides from a single "
+                f"social-media carousel post (Instagram/TikTok photo post), in order. "
+                f"Analyze them collectively as one piece of content.\n\n{prompt}"
+            )
+        else:
+            image_prompt = prompt
+
+        for p in file_paths:
+            uploaded_files.append(_upload_to_gemini(p))
+
+        logger.info("Analyzing uploaded media (%d file(s), model: %s)...",
+                    len(uploaded_files), model)
+        contents = list(uploaded_files) + [image_prompt]
         response = client.models.generate_content(
             model=model,
-            contents=[uploaded_file, prompt],
+            contents=contents,
+            config=_build_analysis_config(),
         )
         return _truncate_response(response.text)
     finally:
-        _cleanup(file_path, uploaded_file)
+        _cleanup(file_paths, uploaded_files)
 
 
 # ---------------------------------------------------------------------------
@@ -1202,8 +1437,8 @@ def execute_tutorial_steps(
 # Entry point
 # ---------------------------------------------------------------------------
 
-def main():
-    """Entry point for the MCP server."""
+def main() -> None:
+    """Entry point for the ``video-url-analyzer-mcp`` console script."""
     logger.info("Starting Video Analyzer MCP Server...")
     mcp.run()
 
