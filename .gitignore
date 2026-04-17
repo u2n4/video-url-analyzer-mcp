@@ -1,20 +1,45 @@
+# Python
 __pycache__/
 *.pyc
 *.pyo
-.env
-analyses/
-*.log
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.pyright/
+.mypy_cache/
+.tox/
+.coverage
+htmlcov/
+
+# Build
+dist/
+build/
+*.whl
+
+# Virtual envs
 .venv/
 venv/
+env/
+
+# Environment
+.env
+.env.local
+
+# Logs & cache
+*.log
+analyses/
+downloads/
 mcp-config.json
-*_thumb.jpeg
-.DS_Store
-Thumbs.db
-node_modules/
+
+# Media (generated / downloaded)
 *.mp4
 *.mp3
 *.wav
-downloads/
-dist/
-*.egg-info/
-build/
+*_thumb.jpeg
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Node / misc
+node_modules/
