@@ -116,7 +116,7 @@ pip install video-url-analyzer-mcp
 
 ### Option 3: From source
 ```bash
-git clone https://github.com/alihsh0/video-url-analyzer-mcp.git
+git clone https://github.com/u2n4/video-url-analyzer-mcp.git
 cd video-url-analyzer-mcp
 pip install -e .
 ```
@@ -304,7 +304,7 @@ If you find this useful, please star this repository!
 ### &#x627;&#x644;&#x62A;&#x62B;&#x628;&#x64A;&#x62A; &#x627;&#x644;&#x633;&#x631;&#x64A;&#x639;
 
 ```bash
-git clone https://github.com/alihsh0/video-url-analyzer-mcp.git
+git clone https://github.com/u2n4/video-url-analyzer-mcp.git
 cd video-url-analyzer-mcp
 pip install -e .
 ```

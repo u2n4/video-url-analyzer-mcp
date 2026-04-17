@@ -10,7 +10,7 @@ readme = "README.md"
 license = "MIT"
 requires-python = ">=3.10"
 authors = [
-    { name = "alihsh0" },
+    { name = "u2n4" },
 ]
 keywords = [
     "mcp", "model-context-protocol", "claude", "youtube", "tiktok",
@@ -37,10 +37,10 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/alihsh0/video-url-analyzer-mcp"
-Repository = "https://github.com/alihsh0/video-url-analyzer-mcp"
-Issues = "https://github.com/alihsh0/video-url-analyzer-mcp/issues"
-Changelog = "https://github.com/alihsh0/video-url-analyzer-mcp/blob/main/CHANGELOG.md"
+Homepage = "https://github.com/u2n4/video-url-analyzer-mcp"
+Repository = "https://github.com/u2n4/video-url-analyzer-mcp"
+Issues = "https://github.com/u2n4/video-url-analyzer-mcp/issues"
+Changelog = "https://github.com/u2n4/video-url-analyzer-mcp/blob/main/CHANGELOG.md"
 
 [project.scripts]
 video-url-analyzer-mcp = "video_url_analyzer_mcp:main"
