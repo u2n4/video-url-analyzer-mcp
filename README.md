@@ -1,4 +1,5 @@
 <!-- Banner image -->
+<!-- mcp-name: io.github.u2n4/video-url-analyzer-mcp -->
 <div align="center">
   <img src="assets/banner.png" alt="Video URL Analyzer MCP" width="100%">
 
@@ -268,6 +269,10 @@ MIT — see [LICENSE](LICENSE).
 ## Support
 
 If you find this useful, please star this repository!
+
+---
+
+Made with ❤️ in the Eastern Province of Saudi Arabia.
 
 ---
 
