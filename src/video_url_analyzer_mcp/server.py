@@ -39,13 +39,35 @@ logging.basicConfig(
 )
 logger = logging.getLogger("video-analyzer")
 
-# Initialize Gemini client
-GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
-if not GEMINI_API_KEY:
-    logger.error("GEMINI_API_KEY environment variable is not set!")
-    raise ValueError("GEMINI_API_KEY environment variable is required")
+# Gemini client initialized lazily on first use so importing the package
+# (editor auto-import, test discovery, `python -c "import ..."`) does not
+# require a key to be set.
+_client: "genai.Client | None" = None
 
-client = genai.Client(api_key=GEMINI_API_KEY)
+
+def get_client() -> "genai.Client":
+    """Return the Gemini client, raising a friendly error only at first use."""
+    global _client
+    if _client is not None:
+        return _client
+    key = os.environ.get("GEMINI_API_KEY", "")
+    if not key:
+        logger.error("GEMINI_API_KEY environment variable is not set!")
+        raise RuntimeError(
+            "GEMINI_API_KEY environment variable is required. "
+            "Get one free at https://aistudio.google.com/apikey and set it in your MCP config."
+        )
+    _client = genai.Client(api_key=key)
+    return _client
+
+
+class _LazyClient:
+    """Back-compat proxy: `client.models.foo(...)` triggers lazy init."""
+    def __getattr__(self, name):
+        return getattr(get_client(), name)
+
+
+client = _LazyClient()
 
 # Default model — alias to the latest stable Flash model (currently Gemini
 # 3 Flash gen). Fast (~1.3s overhead) with strong multimodal accuracy.
