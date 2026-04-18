@@ -284,7 +284,7 @@ def detect_platform(url: str) -> str:
 def _normalize_youtube_url(url: str) -> str:
     """Normalize YouTube URL to standard format."""
     parsed = urlparse(url)
-    if "youtu.be" in parsed.hostname:
+    if parsed.hostname and "youtu.be" in parsed.hostname:
         video_id = parsed.path.lstrip("/")
     else:
         qs = parse_qs(parsed.query)
@@ -362,7 +362,7 @@ def _download_tiktok_api(url: str, tmp_dir: str) -> list[str] | None:
     try:
         resp = cffi_requests.post(
             "https://www.tikwm.com/api/",
-            data={"url": url, "hd": 1},
+            data={"url": url, "hd": "1"},
             impersonate="chrome",
             timeout=20,
         )
@@ -716,13 +716,16 @@ def _upload_to_gemini(file_path: str):
     return uploaded
 
 
-def _cleanup(file_path=None, uploaded_file=None):
+def _cleanup(
+    file_path: str | list[str] | None = None,
+    uploaded_file=None,
+) -> None:
     """Clean up temporary files and uploaded Gemini files.
 
     file_path can be a single path (str) or a list of paths.
     uploaded_file can be a single uploaded file or a list.
     """
-    paths = []
+    paths: list[str] = []
     if file_path:
         paths = file_path if isinstance(file_path, list) else [file_path]
 
@@ -1193,6 +1196,7 @@ def do_watch_and_analyze(
 
     prompt = TUTORIAL_ANALYSIS_PROMPT + lang_hint
 
+    raw_response = ""  # ensure bound even if _analyze_* raises before assignment
     try:
         if platform == "youtube":
             raw_response = _analyze_youtube(url, prompt, model)
@@ -1322,7 +1326,7 @@ def do_execute_tutorial_steps(
         for cmd in cmds:
             log_lines.append(f"  $ {cmd}")
             if not _validate_command(cmd):
-                log_lines.append(f"  BLOCKED dangerous command")
+                log_lines.append("  BLOCKED dangerous command")
                 fail_count += 1
                 continue
             try:
@@ -1344,10 +1348,10 @@ def do_execute_tutorial_steps(
                             log_lines.append(f"    ERR: {line}")
                     fail_count += 1
                 else:
-                    log_lines.append(f"  OK")
+                    log_lines.append("  OK")
                     success_count += 1
             except subprocess.TimeoutExpired:
-                log_lines.append(f"  TIMEOUT (120s)")
+                log_lines.append("  TIMEOUT (120s)")
                 fail_count += 1
             except Exception as e:
                 log_lines.append(f"  ERROR: {e}")
