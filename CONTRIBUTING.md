@@ -4,7 +4,7 @@ Thank you for your interest in contributing! This document provides guidelines a
 
 ## How to Report Bugs
 
-1. **Search existing issues** — Check [GitHub Issues](https://github.com/alihsh0/video-url-analyzer-mcp/issues) to see if the bug has already been reported.
+1. **Search existing issues** — Check [GitHub Issues](https://github.com/u2n4/video-url-analyzer-mcp/issues) to see if the bug has already been reported.
 2. **Create a new issue** — If the bug hasn't been reported, open a new issue with:
    - A clear, descriptive title
    - Steps to reproduce the bug

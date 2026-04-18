@@ -1,0 +1,26 @@
+# Enforce LF line endings for text files; keep native on Windows scripts
+* text=auto eol=lf
+
+# Windows scripts must keep CRLF
+*.bat  text eol=crlf
+*.cmd  text eol=crlf
+*.ps1  text eol=crlf
+
+# Binary assets
+*.png  binary
+*.jpg  binary
+*.jpeg binary
+*.gif  binary
+*.webp binary
+*.ico  binary
+*.mp4  binary
+*.webm binary
+*.mov  binary
+*.mp3  binary
+*.wav  binary
+*.zip  binary
+*.whl  binary
+
+# Text-but-weird
+*.svg  text
+*.md   text diff=markdown

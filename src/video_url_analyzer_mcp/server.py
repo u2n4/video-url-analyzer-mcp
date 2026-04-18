@@ -39,13 +39,35 @@ logging.basicConfig(
 )
 logger = logging.getLogger("video-analyzer")
 
-# Initialize Gemini client
-GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
-if not GEMINI_API_KEY:
-    logger.error("GEMINI_API_KEY environment variable is not set!")
-    raise ValueError("GEMINI_API_KEY environment variable is required")
+# Gemini client initialized lazily on first use so importing the package
+# (editor auto-import, test discovery, `python -c "import ..."`) does not
+# require a key to be set.
+_client: "genai.Client | None" = None
 
-client = genai.Client(api_key=GEMINI_API_KEY)
+
+def get_client() -> "genai.Client":
+    """Return the Gemini client, raising a friendly error only at first use."""
+    global _client
+    if _client is not None:
+        return _client
+    key = os.environ.get("GEMINI_API_KEY", "")
+    if not key:
+        logger.error("GEMINI_API_KEY environment variable is not set!")
+        raise RuntimeError(
+            "GEMINI_API_KEY environment variable is required. "
+            "Get one free at https://aistudio.google.com/apikey and set it in your MCP config."
+        )
+    _client = genai.Client(api_key=key)
+    return _client
+
+
+class _LazyClient:
+    """Back-compat proxy: `client.models.foo(...)` triggers lazy init."""
+    def __getattr__(self, name):
+        return getattr(get_client(), name)
+
+
+client = _LazyClient()
 
 # Default model — alias to the latest stable Flash model (currently Gemini
 # 3 Flash gen). Fast (~1.3s overhead) with strong multimodal accuracy.
@@ -262,7 +284,7 @@ def detect_platform(url: str) -> str:
 def _normalize_youtube_url(url: str) -> str:
     """Normalize YouTube URL to standard format."""
     parsed = urlparse(url)
-    if "youtu.be" in parsed.hostname:
+    if parsed.hostname and "youtu.be" in parsed.hostname:
         video_id = parsed.path.lstrip("/")
     else:
         qs = parse_qs(parsed.query)
@@ -340,7 +362,7 @@ def _download_tiktok_api(url: str, tmp_dir: str) -> list[str] | None:
     try:
         resp = cffi_requests.post(
             "https://www.tikwm.com/api/",
-            data={"url": url, "hd": 1},
+            data={"url": url, "hd": "1"},
             impersonate="chrome",
             timeout=20,
         )
@@ -694,13 +716,16 @@ def _upload_to_gemini(file_path: str):
     return uploaded
 
 
-def _cleanup(file_path=None, uploaded_file=None):
+def _cleanup(
+    file_path: str | list[str] | None = None,
+    uploaded_file=None,
+) -> None:
     """Clean up temporary files and uploaded Gemini files.
 
     file_path can be a single path (str) or a list of paths.
     uploaded_file can be a single uploaded file or a list.
     """
-    paths = []
+    paths: list[str] = []
     if file_path:
         paths = file_path if isinstance(file_path, list) else [file_path]
 
@@ -1171,6 +1196,7 @@ def do_watch_and_analyze(
 
     prompt = TUTORIAL_ANALYSIS_PROMPT + lang_hint
 
+    raw_response = ""  # ensure bound even if _analyze_* raises before assignment
     try:
         if platform == "youtube":
             raw_response = _analyze_youtube(url, prompt, model)
@@ -1300,7 +1326,7 @@ def do_execute_tutorial_steps(
         for cmd in cmds:
             log_lines.append(f"  $ {cmd}")
             if not _validate_command(cmd):
-                log_lines.append(f"  BLOCKED dangerous command")
+                log_lines.append("  BLOCKED dangerous command")
                 fail_count += 1
                 continue
             try:
@@ -1322,10 +1348,10 @@ def do_execute_tutorial_steps(
                             log_lines.append(f"    ERR: {line}")
                     fail_count += 1
                 else:
-                    log_lines.append(f"  OK")
+                    log_lines.append("  OK")
                     success_count += 1
             except subprocess.TimeoutExpired:
-                log_lines.append(f"  TIMEOUT (120s)")
+                log_lines.append("  TIMEOUT (120s)")
                 fail_count += 1
             except Exception as e:
                 log_lines.append(f"  ERROR: {e}")
