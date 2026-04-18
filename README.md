@@ -7,6 +7,7 @@
   <p><strong>MCP server to analyze YouTube, TikTok &amp; Instagram videos from URL — transcripts, AI insights, tutorial extraction</strong></p>
 
   <p>
+    <a href="https://pypi.org/project/video-url-analyzer-mcp/"><img src="https://img.shields.io/pypi/v/video-url-analyzer-mcp?style=for-the-badge&logo=pypi&logoColor=white&label=PyPI" alt="PyPI"></a>
     <a href="#"><img src="https://img.shields.io/badge/MCP-Compatible-blue?style=for-the-badge" alt="MCP"></a>
     <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-green?style=for-the-badge" alt="MIT"></a>
     <a href="#"><img src="https://img.shields.io/badge/Gemini-Powered-4285F4?style=for-the-badge&logo=google&logoColor=white" alt="Gemini"></a>
