@@ -7,27 +7,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [1.1.0] - 2026-04-17
 
 ### Added
-- `.editorconfig` for consistent cross-editor formatting
-- `.gitattributes` enforcing LF line endings
-- `CODE_OF_CONDUCT.md` (Contributor Covenant v2.1)
-- `SECURITY.md` disclosure policy (GitHub private advisories)
-- GitHub Actions CI workflow (ruff + pyright + uv build)
-- PyPI Trusted Publisher publish workflow (OIDC, native `uv publish`)
-- Dependabot weekly updates for pip + GitHub Actions
-- `<!-- mcp-name: io.github.u2n4/video-url-analyzer-mcp -->` marker in README for MCP registry discovery
-- Expanded `.env.example` with `ANALYSES_DIR` + cookies flag documentation
-
-### Changed
-- GitHub username migrated from `alihsh0` to `u2n4` across all URLs, author metadata, and clone commands
-- `GEMINI_API_KEY` check moved from module-import time to `main()` — no more import-time traceback for users without a key
-- Version bumped from 1.0.0 to 1.1.0
-
-### Fixed
-- `ValueError: GEMINI_API_KEY environment variable is required` raised at package import — now a friendly error at runtime only
-
-## [1.1.0] — 2026-04-17
-
-### Added
 - Instagram and TikTok **photo carousel** analysis — previously videos only.
   `analyze_video`, `get_transcript`, `ask_about_video`, and `watch_and_analyze`
   now work on `/p/<id>` carousels and TikTok photo slideshows.
@@ -40,6 +19,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `_build_analysis_config()` — sets `MEDIA_RESOLUTION_HIGH` and
   `ThinkingLevel.HIGH` on every Gemini call so small on-screen text
   (captions, benchmark tables in carousel slides) remains readable.
+- `.editorconfig` for consistent cross-editor formatting.
+- `.gitattributes` enforcing LF line endings.
+- `CODE_OF_CONDUCT.md` (Contributor Covenant v2.1).
+- `SECURITY.md` disclosure policy (GitHub private advisories).
+- GitHub Actions CI workflow (ruff + pyright + uv build).
+- PyPI Trusted Publisher publish workflow (OIDC, native `uv publish`).
+- Dependabot weekly updates for pip + GitHub Actions.
+- `<!-- mcp-name: io.github.u2n4/video-url-analyzer-mcp -->` marker in README for MCP registry discovery.
+- Expanded `.env.example` with `ANALYSES_DIR` + cookies flag documentation.
 
 ### Changed
 - `DEFAULT_MODEL` → `gemini-flash-latest` (alias tracking the latest stable
@@ -48,7 +36,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `_download_video` now returns `list[str]` (one entry for a video, many for
   a carousel). `_analyze_downloaded` uploads every slide and prompts Gemini
   with carousel context.
-- `_cleanup` and `_check_download_sizes` accept list inputs.
+- `_cleanup` and `_check_download_sizes` accept list inputs;
+  `_cleanup` signature widened to `str | list[str] | None` with `-> None` annotation.
+- GitHub username migrated from `alihsh0` to `u2n4` across all URLs, author metadata, and clone commands.
+- `GEMINI_API_KEY` check moved from module-import time to `main()` — no more import-time traceback for users without a key.
+- Version bumped from 1.0.0 to 1.1.0.
+
+### Fixed
+- `ValueError: GEMINI_API_KEY environment variable is required` raised at package import — now a friendly error at runtime only.
 
 ## [1.0.0] - 2026-03-07
 
