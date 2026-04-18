@@ -25,16 +25,13 @@ jobs:
         run: uv sync --all-extras --dev || uv pip install -e .
 
       - name: Lint with ruff
-        run: |
-          uv tool install ruff
-          uv tool run ruff check .
-        continue-on-error: true
+        run: uv tool run ruff check src/
 
       - name: Type check with pyright
-        run: |
-          uv tool install pyright
-          uv tool run pyright src/ || true
-        continue-on-error: true
+        # `uv run --with pyright` runs pyright with project deps available so
+        # imports resolve correctly. Plain `uv tool run pyright` runs in an
+        # isolated env where the project's own deps are invisible.
+        run: uv run --with pyright pyright src/
 
       - name: Run tests (if present)
         run: |
