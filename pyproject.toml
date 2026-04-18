@@ -47,3 +47,16 @@ video-url-analyzer-mcp = "video_url_analyzer_mcp:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/video_url_analyzer_mcp"]
+
+[tool.hatch.build.targets.sdist]
+exclude = [
+  "assets/",
+  "docs/",
+  "tests/",
+  ".github/",
+  "*.png",
+  "*.jpg",
+  "*.jpeg",
+  "*.gif",
+  "*.webp",
+]
