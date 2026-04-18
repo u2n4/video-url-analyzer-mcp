@@ -1,19 +1,16 @@
 # Publish to PyPI via OIDC Trusted Publisher
 #
-# Activation steps (do these BEFORE uncommenting the block below):
-#   1. Publish v1.1.0 manually once with `uv publish` using .pypirc auth.
-#   2. Go to https://pypi.org/manage/project/video-url-analyzer-mcp/settings/publishing/
-#   3. Add a "Trusted Publisher":
-#        - Publisher: GitHub
-#        - Owner: u2n4
-#        - Repository: video-url-analyzer-mcp
-#        - Workflow filename: publish.yml
-#        - Environment name: pypi
-#   4. In this repo, go to Settings -> Environments -> New environment "pypi".
-#      Optionally add required reviewers.
-#   5. Uncomment the job below and push a tag matching `v*.*.*`.
+# Activation requirements (must be done BEFORE first tag push):
+#   1. PyPI Trusted Publisher entry registered at:
+#        https://pypi.org/manage/project/video-url-analyzer-mcp/settings/publishing/
+#      - Owner: u2n4
+#      - Repository: video-url-analyzer-mcp
+#      - Workflow filename: publish.yml
+#      - Environment name: pypi
+#   2. GitHub Environment "pypi" created at:
+#        https://github.com/u2n4/video-url-analyzer-mcp/settings/environments
 #
-# Once OIDC is confirmed working once, you can revoke the `.pypirc` token.
+# Trigger: pushing a tag matching `v*.*.*` runs this workflow.
 
 name: Publish to PyPI
 
@@ -23,29 +20,25 @@ on:
       - "v*.*.*"
 
 jobs:
-  # publish:
-  #   runs-on: ubuntu-latest
-  #   environment: pypi
-  #   permissions:
-  #     id-token: write   # REQUIRED for OIDC Trusted Publishing
-  #     contents: read
-  #
-  #   steps:
-  #     - uses: actions/checkout@v5
-  #
-  #     - name: Install uv
-  #       uses: astral-sh/setup-uv@v6
-  #       with:
-  #         python-version: "3.12"
-  #
-  #     - name: Build
-  #       run: uv build
-  #
-  #     - name: Publish (OIDC)
-  #       run: uv publish
-
-  noop:
-    # Placeholder so the workflow file is still valid while OIDC block is commented out.
+  publish:
     runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write   # REQUIRED for OIDC Trusted Publishing
+      contents: read
+
     steps:
-      - run: echo "Publish workflow is wired but OIDC is not yet activated. See comments at top of this file."
+      - uses: actions/checkout@v5
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.12"
+
+      - name: Build distributions
+        run: uv build
+
+      - name: Publish to PyPI (OIDC)
+        uses: pypa/gh-action-pypi-publish@release/v1
+        # No `with:` block — OIDC token exchange is automatic.
+        # No `password:` — Trusted Publisher provides credentials at runtime.
