@@ -1,0 +1,21 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.u2n4/video-url-analyzer-mcp",
+  "title": "Video URL Analyzer",
+  "description": "Analyze YouTube/TikTok/Instagram videos: transcripts, AI insights, tutorial extraction",
+  "version": "1.1.0",
+  "repository": {
+    "url": "https://github.com/u2n4/video-url-analyzer-mcp",
+    "source": "github"
+  },
+  "packages": [
+    {
+      "registryType": "pypi",
+      "identifier": "video-url-analyzer-mcp",
+      "version": "1.1.0",
+      "transport": {
+        "type": "stdio"
+      }
+    }
+  ]
+}
