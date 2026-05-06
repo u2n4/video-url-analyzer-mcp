@@ -32,6 +32,24 @@
 
 Video URL Analyzer MCP is a Model Context Protocol (MCP) server that lets Claude (or any MCP-compatible AI) analyze videos from YouTube, TikTok, and Instagram — just paste a URL. Powered by Google's Gemini API with full audio + visual analysis, it extracts transcripts, provides AI-powered insights, and can even extract executable tutorial steps.
 
+---
+
+## 30-second demo
+
+Paste a YouTube, TikTok, or Instagram URL into Claude and ask:
+
+```text
+Analyze this video. Give me:
+1. a concise summary
+2. transcript highlights with timestamps
+3. important visual details not obvious from the transcript
+4. any tools, commands, products, or code shown on screen
+```
+
+Video URL Analyzer MCP turns a video link into structured context: transcript, visual understanding, Q&A, and tutorial extraction.
+
+---
+
 ## Features
 
 <p align="center">
@@ -111,6 +129,19 @@ claude mcp add video-analyzer -s user -e GEMINI_API_KEY=your_key -- uvx video-ur
 }
 ```
 
+### Claude Code on Windows
+
+```powershell
+# Install uv if needed
+powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
+
+# Restart PowerShell, then add the MCP server
+claude mcp add video-analyzer -s user -e GEMINI_API_KEY=your_key -- uvx video-url-analyzer-mcp
+
+# Verify
+claude mcp list
+```
+
 ### Option 2: pip install
 ```bash
 pip install video-url-analyzer-mcp
@@ -136,11 +167,35 @@ pip install -e .
 | `execute_tutorial_steps` | Review extracted steps safely, then execute with confirmation. Sandboxed with command & path validation. |
 | `check_analysis_job` | Poll background job status for TikTok/Instagram async downloads. |
 
+> **Safety note:** `execute_tutorial_steps` is intended for reviewed, user-approved tutorial steps. Treat commands extracted from videos as untrusted. Prefer review/dry-run first, and do not execute commands from unknown videos without understanding them.
+>
+> - Default behavior is review-oriented.
+> - `confirm=true` may execute commands.
+> - Users must review and understand commands before execution.
+
 ### How It Works
 
 **YouTube** — Synchronous: URL is sent directly to Gemini API for instant analysis (no download).
 
 **TikTok & Instagram** — Asynchronous: Video is downloaded via yt-dlp, uploaded to Gemini Files API, analyzed, then cleaned up. Returns a `job_id` immediately — poll with `check_analysis_job`.
+
+---
+
+## Privacy & Data Flow
+
+This server is designed to be explicit about where video data goes.
+
+| Platform | Data flow |
+|----------|-----------|
+| YouTube | The video URL is sent to Gemini for native multimodal analysis. The server does not download the YouTube video by default. |
+| TikTok | The video may be downloaded temporarily, uploaded to Gemini Files API for analysis, then cleaned up after processing. |
+| Instagram | The video may be downloaded temporarily, uploaded to Gemini Files API for analysis, then cleaned up after processing. |
+
+Notes:
+- `GEMINI_API_KEY` is required for full multimodal analysis in the current version.
+- Browser cookies are disabled by default and only used if `VIDEO_ANALYZER_COOKIES=true`.
+- Analysis results may be stored in `ANALYSES_DIR` depending on configuration.
+- Do not analyze private, sensitive, or confidential videos unless you are comfortable with this data flow.
 
 ---
 
@@ -167,6 +222,26 @@ watch_and_analyze("https://www.youtube.com/watch?v=tutorial123")
 
 ---
 
+## Try it
+
+```text
+Analyze this YouTube video and give me a summary, transcript highlights, and visual details.
+```
+
+```text
+Ask this video: what tools, apps, products, or commands appear on screen?
+```
+
+```text
+Watch this tutorial and extract the steps, commands, file paths, and warnings. Do not execute anything.
+```
+
+```text
+حلل هذا الفيديو بالعربي، وطلع لي الملخص، أهم النقاط، وأي أوامر أو أدوات تظهر في الشرح.
+```
+
+---
+
 ## Architecture
 
 <p align="center">
@@ -181,7 +256,7 @@ watch_and_analyze("https://www.youtube.com/watch?v=tutorial123")
 | **tikwm.com API** | TikTok fast-path fallback when yt-dlp is WAF-blocked |
 | **Background Jobs** | Async threading for TikTok/Instagram to prevent Claude Desktop timeouts |
 
-```
+```text
 video-url-analyzer-mcp/
 ├── pyproject.toml                    # Package metadata & dependencies
 ├── src/
@@ -224,6 +299,18 @@ This server has been hardened against a comprehensive threat model:
 
 ---
 
+## Known Limitations
+
+- Requires `GEMINI_API_KEY` for full video understanding in the current version.
+- TikTok and Instagram support can be affected by platform anti-bot changes.
+- Private, deleted, region-locked, or login-required videos may fail.
+- Very long videos may hit provider limits, take longer, or cost more.
+- TikTok/Instagram processing is asynchronous; use `check_analysis_job` to poll status.
+- Results depend on Gemini model availability, API quota, and rate limits.
+- Transcript quality depends on audio clarity, language, captions, and platform metadata.
+
+---
+
 ## Configuration
 
 | Variable | Description | Default |
@@ -256,6 +343,31 @@ This server has been hardened against a comprehensive threat model:
 | `ENOENT` on Windows | Use `uvx video-url-analyzer-mcp` as the command |
 | Claude Desktop timeout | TikTok/Instagram run in background — use `check_analysis_job(job_id)` to poll |
 | Python not found | Install Python 3.10+ from [python.org](https://python.org) |
+
+---
+
+## No API Key / Client AI Fallback Roadmap
+
+Gemini API provides the best current experience because it can analyze audio and visuals together.
+
+A future fallback mode is planned for users who do not want to provide an API key or when the API is unavailable:
+
+```text
+Video URL
+→ extract metadata, captions/transcript, and selected keyframes locally
+→ return structured context to the MCP client
+→ let the user's AI client analyze the prepared context
+```
+
+Planned modes:
+
+| Mode | Status | Description |
+|------|--------|-------------|
+| API mode | Available now | Uses Gemini for full multimodal video analysis. |
+| Client AI fallback | Planned | The MCP server prepares transcript, metadata, and keyframes for the client AI to analyze. |
+| Local basic mode | Planned | Returns metadata/transcript/keyframes only, without external model analysis. |
+
+Important: Client AI fallback quality will depend on the MCP client. Some MCP clients may not pass image content from tool results to the model reliably, so transcript/metadata fallback will remain important.
 
 ---
 
@@ -328,5 +440,23 @@ pip install -e .
 1. &#x627;&#x630;&#x647;&#x628; &#x627;&#x644;&#x649; [Google AI Studio](https://aistudio.google.com/apikey)
 2. &#x627;&#x646;&#x634;&#x626; &#x645;&#x641;&#x62A;&#x627;&#x62D; API &#x645;&#x62C;&#x627;&#x646;&#x64A;
 3. &#x636;&#x639;&#x647; &#x641;&#x64A; &#x645;&#x644;&#x641; `.env`
+
+### الخصوصية وتدفق البيانات
+
+- يوتيوب: يتم إرسال رابط الفيديو إلى Gemini للتحليل المباشر، بدون تنزيل الفيديو افتراضياً.
+- تيك توك وانستغرام: قد يتم تنزيل الفيديو مؤقتاً ثم رفعه إلى Gemini Files API للتحليل، وبعدها يتم تنظيف الملفات المؤقتة.
+- مفتاح `GEMINI_API_KEY` مطلوب حالياً للتحليل الكامل.
+- لا تحلل فيديوهات خاصة أو حساسة إذا لم تكن مرتاحاً لطريقة تدفق البيانات.
+
+### القيود المعروفة
+
+- يحتاج مفتاح Gemini API للتحليل الكامل في النسخة الحالية.
+- تيك توك وانستغرام قد يتأثران بتغييرات المنصات أو الحماية ضد البوتات.
+- الفيديوهات الخاصة أو المحذوفة أو التي تحتاج تسجيل دخول قد لا تعمل.
+- الفيديوهات الطويلة قد تأخذ وقتاً أطول أو تصطدم بحدود المزود.
+
+### خطة العمل بدون API لاحقاً
+
+الخطة القادمة هي إضافة وضع fallback بحيث يقوم السيرفر بتجهيز النص، البيانات الوصفية، ولقطات مختارة من الفيديو، ثم يترك التحليل للذكاء الاصطناعي الموجود في العميل نفسه.
 
 </div>
