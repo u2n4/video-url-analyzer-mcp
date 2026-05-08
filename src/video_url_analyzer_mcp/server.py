@@ -4011,6 +4011,38 @@ def do_list_video_sources(filter_text: Optional[str], limit: int) -> str:
     )
 
 
+def _approved_cleanup_roots() -> set[Path]:
+    """Approved cache roots that ``cleanup_video_cache`` is allowed to touch.
+
+    These are the configured/default cache directories the server itself
+    creates and manages. Validation against this set replaces the older
+    PROJECT_ROOT containment check, which broke under packaged/uvx installs
+    where the package lives in site-packages but cache dirs resolve under
+    the process working directory.
+    """
+    return {
+        VIDEO_SOURCE_DIR.resolve(),
+        VIDEO_ASSET_DIR.resolve(),
+        VIDEO_CONTEXT_DIR.resolve(),
+    }
+
+
+def _assert_safe_cleanup_root(root: Path) -> Path:
+    """Ensure ``root`` is one of the approved cache roots and not a system root.
+
+    Raises ``RuntimeError`` for filesystem root, drive root, or the user's
+    home directory itself; and for any path that is not in the approved set.
+    Returns the resolved path on success.
+    """
+    resolved = root.resolve()
+    home = Path.home().resolve()
+    if resolved == Path(resolved.anchor) or resolved == home:
+        raise RuntimeError(f"Refusing cleanup of system root: {root}")
+    if resolved not in _approved_cleanup_roots():
+        raise RuntimeError(f"Refusing cleanup root outside managed cache: {root}")
+    return resolved
+
+
 def _cache_cleanup_candidates(scope: str, video_id: str | None) -> list[tuple[str, Path, Path]]:
     scopes = ("sources", "assets", "contexts", "all")
     if scope not in scopes:
@@ -4026,8 +4058,7 @@ def _cache_cleanup_candidates(scope: str, video_id: str | None) -> list[tuple[st
 
     candidates: list[tuple[str, Path, Path]] = []
     for kind, root in roots:
-        if not _is_within(root, PROJECT_ROOT):
-            raise RuntimeError(f"Refusing cleanup root outside project: {root}")
+        resolved_root = _assert_safe_cleanup_root(root)
         root.mkdir(parents=True, exist_ok=True)
         for vid in ids:
             if not vid:
@@ -4035,9 +4066,9 @@ def _cache_cleanup_candidates(scope: str, video_id: str | None) -> list[tuple[st
             safe_id = re.sub(r"[^a-zA-Z0-9_-]", "", vid)
             path = root / f"{safe_id}.json" if kind == "contexts" else root / safe_id
             if path.exists():
-                if not _is_within(path, root) or not _is_within(path, PROJECT_ROOT):
+                if not _is_within(path, resolved_root):
                     raise RuntimeError(f"Refusing cleanup path outside {root}: {path}")
-                candidates.append((kind, path, root))
+                candidates.append((kind, path, resolved_root))
     return candidates
 
 
@@ -4070,7 +4101,8 @@ def do_cleanup_video_cache(
     removed: list[dict] = []
     if not dry_run:
         for row, (_, path, root) in zip(rows, candidates):
-            if not _is_within(path, root) or not _is_within(path, PROJECT_ROOT):
+            _assert_safe_cleanup_root(root)
+            if not _is_within(path, root):
                 raise RuntimeError(f"Refusing cleanup path outside managed cache: {path}")
             if path.is_dir():
                 shutil.rmtree(path)
@@ -4683,18 +4715,21 @@ def prepare_video_context(
     chunk_seconds: int = 30,
 ) -> str:
     """Analyze a whole video once and save a local structured context."""
+    validate_url(url)
+
+    existing: SavedVideoContext | None = None
     try:
-        validate_url(url)
         existing = _load_video_context(url)
-        if existing is not None and not force_refresh:
-            return do_prepare_video_context(
-                url,
-                detail,
-                force_refresh,
-                model,
-                chunk_seconds,
-            )
-    except Exception:
+    except Exception as exc:
+        # A malformed/corrupt cached context must not block new analysis or
+        # bypass async dispatch. Treat lookup failure as "no reusable context".
+        logger.warning(
+            "prepare_video_context: cached context lookup failed, treating as missing: %s",
+            exc,
+        )
+        existing = None
+
+    if existing is not None and not force_refresh:
         return do_prepare_video_context(
             url,
             detail,
