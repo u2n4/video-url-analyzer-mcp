@@ -99,61 +99,122 @@ These are behavior modes, not tool names:
 
 ## Quick Start
 
-### One-Click Install (Windows)
+The packaged runtime lives at `src/video_url_analyzer_mcp/server.py`; the
+console entry point is `video_url_analyzer_mcp:main`. Pick whichever
+install path matches your workflow.
+
+### Option A — `uvx` (no install)
 
 ```powershell
-irm https://raw.githubusercontent.com/alihsh0/video-analyzer-mcp/main/install.ps1 | iex
+uvx video-url-analyzer-mcp
 ```
 
-### Manual Setup
+Works on Windows / macOS / Linux as long as [uv](https://docs.astral.sh/uv/) is on PATH.
+
+### Option B — Windows wizard (recommended for new users)
+
+```powershell
+git clone https://github.com/u2n4/video-url-analyzer-mcp.git
+cd video-url-analyzer-mcp
+powershell -ExecutionPolicy Bypass -File scripts\install_windows.ps1
+```
+
+The wizard:
+
+- Verifies Python 3.10+ and (optionally) `uv`.
+- Installs the package as an editable checkout or via `uv tool install`.
+- Lets you save `GEMINI_API_KEY` to a User environment variable **or** to a
+  gitignored `.env.keys.local`. Keys are masked in logs (`AIza...abcd`),
+  never printed in full.
+- Lets you pick a default model via `VIDEO_ANALYZER_MODEL`.
+- Runs an offline import smoke test.
+- Hands off to `scripts/configure_mcp_clients.ps1` for client setup.
+
+### Option C — Manual install (any OS)
 
 ```bash
-git clone https://github.com/alihsh0/video-analyzer-mcp.git
-cd video-analyzer-mcp
-pip install -r requirements.txt
+git clone https://github.com/u2n4/video-url-analyzer-mcp.git
+cd video-url-analyzer-mcp
+pip install -e .
+python -m video_url_analyzer_mcp
 ```
 
-Create `.env`:
+Get a free key at [Google AI Studio](https://aistudio.google.com/apikey),
+then set it once in your shell environment (`setx GEMINI_API_KEY ...` on
+Windows, or your `~/.zshrc` / `~/.bashrc` on macOS/Linux). For local dev
+only, you can also drop it in a gitignored `.env.keys.local` next to the
+repo.
 
-```env
-GEMINI_API_KEY=your_key_here
-```
+### Windows launcher
 
-Get your free API key from [Google AI Studio](https://aistudio.google.com/apikey).
-
-```bash
-python server.py
-```
+`start.bat` loads `.env.keys.local` (if present), sets safe defaults
+(`VIDEO_ANALYZER_MODE=auto`), and runs `python -m video_url_analyzer_mcp`.
+Use it as a `command` value in any MCP client that prefers a single
+executable.
 
 ---
 
 ## Integration
 
-### Claude Desktop
+Run `scripts/configure_mcp_clients.ps1` for an interactive menu, or copy
+the snippets below from `docs/mcp-config-examples.md`. The wizard backs up
+existing client config, validates JSON/TOML, and never overwrites unrelated
+MCP servers.
 
-Add to `%APPDATA%\Claude\claude_desktop_config.json`:
+### Claude Desktop (`%APPDATA%\Claude\claude_desktop_config.json`)
 
 ```json
 {
   "mcpServers": {
-    "video-analyzer": {
-      "command": "C:/path/to/video-analyzer-mcp/start.bat",
-      "args": [],
-      "env": {
-        "GEMINI_API_KEY": "your_key_here"
-      }
+    "video-url-analyzer": {
+      "command": "uvx",
+      "args": ["video-url-analyzer-mcp"]
     }
   }
 }
 ```
 
-> **Tip:** Use `start.bat` — it auto-detects the correct Python with all dependencies installed.
+The wizard prefers leaving the API key in your OS environment. If you must
+embed it, add `"env": { "GEMINI_API_KEY": "YOUR_KEY_HERE" }`.
 
-### Claude Code CLI
+### Claude Code (CLI)
 
 ```bash
-claude mcp add video-analyzer --transport stdio -e GEMINI_API_KEY=your_key -- python /path/to/server.py
+claude mcp add video-url-analyzer --transport stdio -- uvx video-url-analyzer-mcp
 ```
+
+Or, after `pip install -e .` in the repo:
+
+```bash
+claude mcp add video-url-analyzer --transport stdio -- python -m video_url_analyzer_mcp
+```
+
+### Codex CLI (`~/.codex/config.toml`)
+
+```toml
+[mcp_servers.video-url-analyzer]
+command = "uvx"
+args = ["video-url-analyzer-mcp"]
+```
+
+### VS Code / GitHub Copilot MCP
+
+Workspace registration writes `.vscode/mcp.json`:
+
+```json
+{
+  "servers": {
+    "video-url-analyzer": {
+      "command": "uvx",
+      "args": ["video-url-analyzer-mcp"]
+    }
+  }
+}
+```
+
+For all clients, restart the application after editing config so the new
+MCP server is picked up. Full snippets — including Cursor, Windsurf, and
+Antigravity — live in [`docs/mcp-config-examples.md`](docs/mcp-config-examples.md).
 
 ---
 
@@ -220,6 +281,10 @@ This server has been hardened against a comprehensive threat model audit:
 | `VIDEO_DOWNLOAD_TIMEOUT` | Override download and yt-dlp timeout values, in seconds | Existing per-operation defaults |
 | `VIDEO_FFMPEG_TIMEOUT` | Override ffmpeg extraction timeout values, in seconds | Existing per-operation defaults |
 | `VIDEO_GEMINI_TIMEOUT` | Optional Gemini HTTP timeout, in seconds | SDK default |
+| `VIDEO_ANALYZER_MODEL` | Single-knob default model id used for both fast and deep model resolution. Per-call `model=` and `GEMINI_FAST_MODEL` / `GEMINI_DEEP_MODEL` still take precedence. | `gemini-flash-latest` |
+| `GEMINI_FAST_MODEL` | Override for compact/standard detail mode | `gemini-flash-latest` |
+| `GEMINI_DEEP_MODEL` | Override for `full` detail mode | `gemini-flash-latest` |
+| `VIDEO_ANALYZER_MODE` | Behavior preset (`auto` / `api` / `client` / `local`); read by `start.bat` | `auto` |
 
 ---
 
@@ -294,9 +359,15 @@ MIT
 
 ### التثبيت السريع (ويندوز)
 
+استنسخ الريبو ثم شغل المعالج التفاعلي:
+
 ```powershell
-irm https://raw.githubusercontent.com/alihsh0/video-analyzer-mcp/main/install.ps1 | iex
+git clone https://github.com/u2n4/video-url-analyzer-mcp.git
+cd video-url-analyzer-mcp
+powershell -ExecutionPolicy Bypass -File scripts\install_windows.ps1
 ```
+
+البديل بدون تثبيت: `uvx video-url-analyzer-mcp`.
 
 ### الامان
 

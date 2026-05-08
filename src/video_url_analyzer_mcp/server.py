@@ -221,8 +221,14 @@ logging.basicConfig(
 logger = logging.getLogger("video-analyzer")
 
 # Phase 0 model selection. See .agent-workspace/phase0_models_report.txt.
-FAST_MODEL_DEFAULT = "gemini-flash-latest"
-DEEP_MODEL_DEFAULT = "gemini-flash-latest"
+# ``VIDEO_ANALYZER_MODEL`` is a single-knob umbrella default used by the
+# installer wizard. ``GEMINI_FAST_MODEL`` and ``GEMINI_DEEP_MODEL`` still
+# take precedence at call time (see ``_resolve_model``).
+_VIDEO_ANALYZER_MODEL_OVERRIDE = (
+    os.environ.get("VIDEO_ANALYZER_MODEL", "").strip() or None
+)
+FAST_MODEL_DEFAULT = _VIDEO_ANALYZER_MODEL_OVERRIDE or "gemini-flash-latest"
+DEEP_MODEL_DEFAULT = _VIDEO_ANALYZER_MODEL_OVERRIDE or "gemini-flash-latest"
 FAST_SUPPORTS_THINKING = True
 DEEP_SUPPORTS_THINKING = True
 FAST_SUPPORTS_MEDIA_RESOLUTION = True
