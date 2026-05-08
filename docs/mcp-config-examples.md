@@ -154,11 +154,19 @@ Or use the launcher (Windows):
 Set one of these environment variables (User scope on Windows, shell rc on
 macOS/Linux). Explicit per-call `model=` arguments still win over env vars.
 
-| Variable | Effect |
-|---|---|
-| `VIDEO_ANALYZER_MODEL` | Single-knob default for both fast and deep model resolution. |
-| `GEMINI_FAST_MODEL` | Overrides the model used for compact/standard detail modes. |
-| `GEMINI_DEEP_MODEL` | Overrides the model used for the `full` detail mode. |
+| Variable | Effect | Default |
+|---|---|---|
+| `VIDEO_ANALYZER_MODEL` | Single-knob default for both fast and deep model resolution. | _unset_ |
+| `GEMINI_FAST_MODEL` | Overrides the model used for compact/standard detail modes. | `gemini-3.1-flash-lite-preview` |
+| `GEMINI_DEEP_MODEL` | Overrides the model used for the `full` detail mode. | `gemini-3.1-pro-preview` |
 
-Suggested values: `gemini-flash-latest` (stable), `gemini-3.1-flash-lite-preview`
-(fast/cheap), `gemini-3.1-pro-preview` (balanced, requires Pro access).
+Resolution order at call time:
+
+1. explicit per-tool `model=` argument
+2. `GEMINI_FAST_MODEL` / `GEMINI_DEEP_MODEL` (whichever applies)
+3. `VIDEO_ANALYZER_MODEL` (umbrella override for both)
+4. the hardcoded fallbacks above
+
+Model availability may vary by Google account, region, and API tier. If
+the Gemini 3.1 preview ids are not enabled for your key, set
+`VIDEO_ANALYZER_MODEL=gemini-flash-latest` as a stable fallback.
