@@ -281,9 +281,16 @@ This server has been hardened against a comprehensive threat model audit:
 | `VIDEO_DOWNLOAD_TIMEOUT` | Override download and yt-dlp timeout values, in seconds | Existing per-operation defaults |
 | `VIDEO_FFMPEG_TIMEOUT` | Override ffmpeg extraction timeout values, in seconds | Existing per-operation defaults |
 | `VIDEO_GEMINI_TIMEOUT` | Optional Gemini HTTP timeout, in seconds | SDK default |
-| `VIDEO_ANALYZER_MODEL` | Single-knob default model id used for both fast and deep model resolution. Per-call `model=` and `GEMINI_FAST_MODEL` / `GEMINI_DEEP_MODEL` still take precedence. | `gemini-flash-latest` |
-| `GEMINI_FAST_MODEL` | Override for compact/standard detail mode | `gemini-flash-latest` |
-| `GEMINI_DEEP_MODEL` | Override for `full` detail mode | `gemini-flash-latest` |
+| `VIDEO_ANALYZER_MODEL` | Single-knob default model id used for both fast and deep model resolution. Per-call `model=` and `GEMINI_FAST_MODEL` / `GEMINI_DEEP_MODEL` still take precedence. | _unset_ |
+| `GEMINI_FAST_MODEL` | Override for compact/standard detail mode | `gemini-3.1-flash-lite-preview` |
+| `GEMINI_DEEP_MODEL` | Override for `full` detail mode | `gemini-3.1-pro-preview` |
+
+> Default fast model: `gemini-3.1-flash-lite-preview`. Default deep model
+> (used when `detail="full"`): `gemini-3.1-pro-preview`. Set
+> `VIDEO_ANALYZER_MODEL` to override both at once. Model availability can
+> vary by Google account, region, and API tier — fall back to
+> `gemini-flash-latest` if the 3.1 preview ids are not yet enabled for your
+> key.
 | `VIDEO_ANALYZER_MODE` | Behavior preset (`auto` / `api` / `client` / `local`); read by `start.bat` | `auto` |
 
 ---
