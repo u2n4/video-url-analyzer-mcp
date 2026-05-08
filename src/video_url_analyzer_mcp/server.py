@@ -30,7 +30,9 @@ from fastmcp import FastMCP
 from google import genai
 from google.genai import errors, types
 from pydantic import BaseModel, Field
-from typing import Any, Literal, Optional
+from typing import Any, Literal, Optional, cast
+
+DetailLevel = Literal["compact", "standard", "full"]
 
 
 class VideoMoment(BaseModel):
@@ -325,6 +327,22 @@ def _generate_content_with_retry(**kwargs):
         "generate_content",
         lambda: _get_client().models.generate_content(**kwargs),
     )
+
+
+def _require_response_text(response: Any) -> str:
+    """Return ``response.text`` or raise a structured error if Gemini returned no text.
+
+    Gemini SDK types ``response.text`` as ``str | None``; we surface the empty
+    case as a retryable structured error instead of a downstream NoneType crash.
+    """
+    text = getattr(response, "text", None)
+    if not text:
+        raise VideoAnalyzerError(
+            "Gemini returned an empty response.",
+            code="empty_gemini_response",
+            retryable=True,
+        )
+    return text
 
 
 class VideoAnalyzerError(RuntimeError):
@@ -704,7 +722,8 @@ def _safe_yt_dlp_sort_for_url(url: str) -> Optional[str]:
 def _normalize_youtube_url(url: str) -> str:
     """Normalize YouTube URL to standard format."""
     parsed = urlparse(url)
-    if "youtu.be" in parsed.hostname:
+    hostname = parsed.hostname or ""
+    if "youtu.be" in hostname:
         video_id = parsed.path.lstrip("/")
     else:
         qs = parse_qs(parsed.query)
@@ -783,7 +802,7 @@ def _download_tiktok_api(url: str, tmp_dir: str) -> list[str] | None:
     try:
         resp = cffi_requests.post(
             "https://www.tikwm.com/api/",
-            data={"url": url, "hd": 1},
+            data={"url": url, "hd": "1"},
             impersonate="chrome",
             timeout=_download_timeout(20),
         )
@@ -1379,6 +1398,14 @@ def _upload_to_gemini(file_path: str):
     uploaded = _get_client().files.upload(file=file_path)
     logger.info("Uploaded file: %s, state: %s", uploaded.name, uploaded.state)
 
+    file_name = uploaded.name
+    if not file_name:
+        raise VideoAnalyzerError(
+            "Gemini upload returned a file without a name.",
+            code="gemini_upload_failed",
+            retryable=True,
+        )
+
     # Poll until processing is complete (state becomes ACTIVE)
     retries = 0
     max_retries = 60
@@ -1392,7 +1419,7 @@ def _upload_to_gemini(file_path: str):
                 details={"file_state": str(uploaded.state)},
             )
         time.sleep(2)
-        uploaded = _get_client().files.get(name=uploaded.name)
+        uploaded = _get_client().files.get(name=file_name)
         retries += 1
         if retries % 10 == 0:
             logger.info("Still processing... (%d/%d)", retries, max_retries)
@@ -3080,7 +3107,7 @@ def _analyze_youtube(url: str, prompt: str, model: str) -> str:
         ),
         config=_build_analysis_config(),
     )
-    return _truncate_response(response.text)
+    return _truncate_response(_require_response_text(response))
 
 
 def _analyze_downloaded(url: str, prompt: str, model: str) -> str:
@@ -3118,7 +3145,7 @@ def _analyze_downloaded(url: str, prompt: str, model: str) -> str:
             contents=contents,
             config=_build_analysis_config(),
         )
-        return _truncate_response(response.text)
+        return _truncate_response(_require_response_text(response))
     finally:
         _cleanup(file_paths, uploaded_files)
 
@@ -3300,11 +3327,13 @@ def do_find_video_moments(
             finally:
                 _cleanup(file_paths, uploaded_files)
 
-        parsed = MomentSearchResult.model_validate_json(response.text)
+        parsed = MomentSearchResult.model_validate_json(
+            _require_response_text(response)
+        )
         parsed.query = query
         parsed.analyzed_by = "gemini"
         parsed.model_used = chosen_model
-        parsed.detail = detail
+        parsed.detail = cast(DetailLevel, detail)
         parsed.moments = parsed.moments[:max_results]
         for moment in parsed.moments:
             moment.audio_evidence = moment.audio_evidence[
@@ -3459,10 +3488,12 @@ def do_analyze_video_segment(
             finally:
                 _cleanup(file_paths, uploaded_files)
 
-        parsed = SegmentAnalysisResult.model_validate_json(response.text)
+        parsed = SegmentAnalysisResult.model_validate_json(
+            _require_response_text(response)
+        )
         parsed.analyzed_by = "gemini"
         parsed.model_used = chosen_model
-        parsed.detail = detail
+        parsed.detail = cast(DetailLevel, detail)
         parsed.segment_start = start
         parsed.segment_end = end
         parsed.key_points = parsed.key_points[:settings["max_key_points"]]
@@ -3580,7 +3611,9 @@ def do_prepare_video_context(
                 _cleanup(file_paths, uploaded_files)
 
         now = datetime.now().isoformat()
-        parsed = SavedVideoContext.model_validate_json(response.text)
+        parsed = SavedVideoContext.model_validate_json(
+            _require_response_text(response)
+        )
         parsed.schema_version = "1.3.0"
         parsed.video_id = video_id
         parsed.url = url
@@ -3589,7 +3622,7 @@ def do_prepare_video_context(
         parsed.updated_at = now
         parsed.analyzed_by = "gemini"
         parsed.model_used = chosen_model
-        parsed.detail = detail
+        parsed.detail = cast(DetailLevel, detail)
         parsed.timeline = parsed.timeline[:40]
         parsed.key_moments = parsed.key_moments[:20]
         parsed.context_quality = _compute_context_quality(parsed)
@@ -3686,7 +3719,9 @@ def _ask_gemini_about_saved_context(
         contents=prompt,
         config=config,
     )
-    answer = AskVideoContextResult.model_validate_json(response.text)
+    answer = AskVideoContextResult.model_validate_json(
+        _require_response_text(response)
+    )
     answer.video_id = ctx.video_id
     answer.question = question
     answer.source = "gemini_reanalysis"
@@ -5024,6 +5059,7 @@ def do_watch_and_analyze(
 
     prompt = TUTORIAL_ANALYSIS_PROMPT + lang_hint
 
+    raw_response = ""
     try:
         if platform == "youtube":
             raw_response = _analyze_youtube(url, prompt, model)
@@ -5162,7 +5198,7 @@ def do_execute_tutorial_steps(
         for cmd in cmds:
             log_lines.append(f"  $ {cmd}")
             if not _validate_command(cmd):
-                log_lines.append(f"  BLOCKED dangerous command")
+                log_lines.append("  BLOCKED dangerous command")
                 fail_count += 1
                 continue
             try:
@@ -5184,10 +5220,10 @@ def do_execute_tutorial_steps(
                             log_lines.append(f"    ERR: {line}")
                     fail_count += 1
                 else:
-                    log_lines.append(f"  OK")
+                    log_lines.append("  OK")
                     success_count += 1
             except subprocess.TimeoutExpired:
-                log_lines.append(f"  TIMEOUT (120s)")
+                log_lines.append("  TIMEOUT (120s)")
                 fail_count += 1
             except Exception as e:
                 log_lines.append(f"  ERROR: {e}")
