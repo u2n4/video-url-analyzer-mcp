@@ -28,8 +28,10 @@ env/
 .env.keys.local
 *.local
 
-# MCP / local config
+# MCP / local config + browser cookie jars used by yt-dlp
 mcp-config.json
+cookies.txt
+cookies/*.txt
 
 # Logs
 *.log
