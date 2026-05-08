@@ -23,19 +23,50 @@ env/
 
 # Environment
 .env
-.env.local
+.env.*
+.env.*.local
+.env.keys.local
+*.local
 
-# Logs & cache
-*.log
-analyses/
-downloads/
+# MCP / local config
 mcp-config.json
 
-# Media (generated / downloaded)
+# Logs
+*.log
+
+# Generated / downloaded media (this server downloads videos, audio, images)
 *.mp4
+*.mov
+*.mkv
+*.webm
 *.mp3
 *.wav
+*.jpg
+*.jpeg
+*.png
+*.webp
 *_thumb.jpeg
+# Allowlist project branding/doc images that ship with the repo
+!assets/architecture.png
+!assets/banner.png
+!assets/features.png
+
+# Local data caches
+analyses/
+downloads/
+video_contexts/
+video_sources/
+video_assets/
+
+# Local agent coordination and rollback snapshots
+.agent-workspace/
+server.py.backup-pre-v*.0
+
+# Local test scripts / outputs (may contain private URLs + generated analyses)
+test_photos.py
+test_analyze_photos.py
+test_urls.py
+test_output/
 
 # OS
 .DS_Store
