@@ -20,6 +20,7 @@ Video URL Analyzer MCP is a Model Context Protocol server that analyzes videos f
 - YouTube (synchronous, direct Gemini analysis)
 - TikTok (async, yt-dlp download)
 - Instagram (async, yt-dlp + curl_cffi)
+- Photo/slideshow posts: TikTok Photo Mode, Instagram Carousel/photo posts, and YouTube Community image posts are analyzed as ordered images plus optional audio.
 
 ## Requirements
 

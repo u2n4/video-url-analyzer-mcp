@@ -64,6 +64,14 @@ v1.4 exposes **17 MCP tools**:
 | **TikTok** | tikwm.com API (fast) &#8594; yt-dlp fallback with a safe MP4 H.264/H.265 selector that avoids unsupported ByteDance `bvc2`/`bytevc2` streams when possible | ~8s |
 | **Instagram** | Page scrape via curl_cffi (fast) &#8594; yt-dlp fallback | ~10s |
 
+#### Photo / Slideshow Posts
+
+| Platform | Post type | Handling |
+|----------|-----------|----------|
+| **TikTok** | Photo Mode slideshow | Downloads all images, extracts the music/audio track when available, and sends one multimodal Gemini request. |
+| **Instagram** | Carousel / single-photo posts | Downloads image slides in order and analyzes them as one post; mixed video slides are skipped with metadata. |
+| **YouTube** | Community `/post/` image attachments | Scrapes `ytInitialData`, downloads image attachments, and analyzes them through Gemini Files API. |
+
 > YouTube videos are analyzed directly through Gemini's native video understanding — zero download, zero upload, maximum speed.
 > For YouTube evidence assets, `source.mp4` is not always required: saved contexts keep the original URL, so frame/clip tools can use the local stream fast path later.
 

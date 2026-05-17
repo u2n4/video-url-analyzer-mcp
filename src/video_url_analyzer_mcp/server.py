@@ -32,6 +32,13 @@ from google.genai import errors, types
 from pydantic import BaseModel, Field
 from typing import Any, Literal, Optional, cast
 
+from .slideshow import (
+    SlideshowError,
+    analyze_slideshow,
+    detect_post_type,
+    download_slideshow,
+)
+
 DetailLevel = Literal["compact", "standard", "full"]
 
 
@@ -649,6 +656,29 @@ If the video is NOT a technical tutorial:
 Be extremely thorough. Extract every command, every file path, every code snippet, every URL shown or mentioned. Do not skip anything."""
 
 
+SLIDESHOW_TUTORIAL_ANALYSIS_PROMPT = """You are analyzing a photo/slideshow post as a technical visual tutorial.
+
+Output ONLY valid JSON (no markdown fences, no extra text) with this exact structure:
+
+{
+  "title": "short title for the post",
+  "post_type": "slideshow",
+  "platform": "tiktok/instagram/youtube_community",
+  "prerequisites": [],
+  "steps": [
+    {
+      "image_index": 1,
+      "description": "what this slide teaches or shows",
+      "extracted_text": "all readable text in this image",
+      "key_visual_elements": ["important object, UI element, chart, or code visible"]
+    }
+  ],
+  "summary": "overall tutorial or informational takeaway"
+}
+
+Use 1-based image_index values matching the original slide order. If the post is not a tutorial, still summarize the visual content using the same slideshow structure."""
+
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -1032,11 +1062,16 @@ def _check_download_sizes(paths: list[str]) -> list[str]:
 
 
 _IMAGE_SUFFIXES = (".jpg", ".jpeg", ".png", ".webp")
+_AUDIO_SUFFIXES = (".aac", ".flac", ".m4a", ".mp3", ".oga", ".ogg", ".opus", ".wav")
 _UNSUPPORTED_VIDEO_CODEC_MARKERS = ("bvc2", "bytevc2")
 
 
 def _is_image_path(path: str | Path) -> bool:
     return str(path).lower().endswith(_IMAGE_SUFFIXES)
+
+
+def _is_audio_path(path: str | Path) -> bool:
+    return str(path).lower().endswith(_AUDIO_SUFFIXES)
 
 
 def _remove_paths(paths: list[str]) -> None:
@@ -1134,6 +1169,13 @@ def _validate_media_file_for_processing(
             platform=platform,
         )
     if _is_image_path(media_path):
+        return {
+            "source_valid": True,
+            "source_downloaded": True,
+            "codec": None,
+            "bytes": size,
+        }
+    if _is_audio_path(media_path):
         return {
             "source_valid": True,
             "source_downloaded": True,
@@ -3101,6 +3143,109 @@ def _answer_from_saved_context(
     )
 
 
+def _detect_post_type_for_routing(url: str) -> str:
+    """Best-effort slideshow detection that never blocks the legacy video path."""
+    try:
+        post_type = detect_post_type(url)
+        logger.info("Slideshow detection result: %s", post_type)
+        return post_type
+    except Exception as exc:
+        logger.warning(
+            "Slideshow detection failed; continuing with existing video flow: %s",
+            exc,
+        )
+        return "unknown"
+
+
+def _make_slideshow_temp_dir() -> Path:
+    return Path(tempfile.mkdtemp(prefix="slideshow_", dir=str(ANALYSES_DIR)))
+
+
+def _validate_slideshow_download(slideshow: dict[str, Any], url: str) -> None:
+    paths = [str(path) for path in slideshow.get("images") or []]
+    if slideshow.get("audio"):
+        paths.append(str(slideshow["audio"]))
+    if not paths:
+        raise SlideshowError("Slideshow download produced no media files.")
+    _check_download_sizes(paths)
+    _validate_media_paths_for_processing(paths, url)
+
+
+def _download_slideshow_for_url(url: str, post_type: str) -> tuple[dict[str, Any], Path]:
+    temp_dir = _make_slideshow_temp_dir()
+    try:
+        slideshow = download_slideshow(url, temp_dir, post_type)
+        _validate_slideshow_download(slideshow, url)
+        return slideshow, temp_dir
+    except Exception:
+        shutil.rmtree(temp_dir, ignore_errors=True)
+        raise
+
+
+def _analyze_slideshow_post(
+    url: str,
+    prompt: str,
+    model: str,
+    lang: str | None = None,
+    post_type: str | None = None,
+) -> str:
+    resolved_type = post_type or _detect_post_type_for_routing(url)
+    slideshow, temp_dir = _download_slideshow_for_url(url, resolved_type)
+    try:
+        result = analyze_slideshow(
+            _get_client(),
+            model,
+            slideshow,
+            prompt,
+            lang,
+            upload_file=_upload_to_gemini,
+            generate_content=_generate_content_with_retry,
+            config=_build_analysis_config(),
+        )
+        return _truncate_response(result)
+    finally:
+        shutil.rmtree(temp_dir, ignore_errors=True)
+
+
+def _transcribe_slideshow_audio(
+    url: str,
+    transcript_prompt: str,
+    model: str,
+    post_type: str,
+) -> str:
+    uploaded_file = None
+    slideshow, temp_dir = _download_slideshow_for_url(url, post_type)
+    try:
+        metadata = slideshow.get("metadata") or {}
+        audio = slideshow.get("audio")
+        if not audio:
+            return json.dumps({
+                "type": "slideshow_no_audio",
+                "message": (
+                    f"This post contains {metadata.get('image_count', 0)} images "
+                    "but no audio track."
+                ),
+                "image_count": metadata.get("image_count", 0),
+                "platform": metadata.get("platform"),
+            }, indent=2, ensure_ascii=False)
+
+        uploaded_file = _upload_to_gemini(str(audio))
+        response = _generate_content_with_retry(
+            model=model,
+            contents=[
+                "Transcribe the audio/music track from this slideshow post. "
+                "If there is music without intelligible speech, describe that clearly.",
+                uploaded_file,
+                transcript_prompt,
+            ],
+            config=_build_analysis_config(),
+        )
+        return _truncate_response(_require_response_text(response))
+    finally:
+        _cleanup(uploaded_file=uploaded_file)
+        shutil.rmtree(temp_dir, ignore_errors=True)
+
+
 def _analyze_youtube(url: str, prompt: str, model: str) -> str:
     """Analyze a YouTube video directly via Gemini (no download)."""
     normalized_url = _normalize_youtube_url(url)
@@ -3123,6 +3268,10 @@ def _analyze_youtube(url: str, prompt: str, model: str) -> str:
 
 def _analyze_downloaded(url: str, prompt: str, model: str) -> str:
     """Download media (video or image carousel), upload to Gemini, analyze."""
+    post_type = _detect_post_type_for_routing(url)
+    if post_type in {"slideshow", "youtube_community"}:
+        return _analyze_slideshow_post(url, prompt, model, post_type=post_type)
+
     file_paths: list[str] = []
     uploaded_files: list = []
     try:
@@ -3188,12 +3337,15 @@ def do_analyze_video(
     prompt: str = DEFAULT_ANALYSIS_PROMPT,
     model: str = DEFAULT_MODEL,
 ) -> str:
-    """Analyze a video from YouTube, TikTok, or Instagram."""
+    """Analyze a video or photo/slideshow post from YouTube, TikTok, or Instagram."""
     validate_url(url)
+    post_type = _detect_post_type_for_routing(url)
     platform = detect_platform(url)
     logger.info("analyze_video: platform=%s, url=%s", platform, url)
 
     try:
+        if post_type in {"slideshow", "youtube_community"}:
+            return _analyze_slideshow_post(url, prompt, model, post_type=post_type)
         if platform == "youtube":
             return _analyze_youtube(url, prompt, model)
         return _analyze_downloaded(url, prompt, model)
@@ -3217,6 +3369,7 @@ def do_get_transcript(
 ) -> str:
     """Extract speech transcript from a video with timestamps."""
     validate_url(url)
+    post_type = _detect_post_type_for_routing(url)
     lang_instruction = ""
     if lang and lang != "auto":
         lang_instruction = f" The video is in {lang}. Transcribe in that language."
@@ -3234,6 +3387,8 @@ def do_get_transcript(
     logger.info("get_transcript: platform=%s, url=%s, lang=%s", platform, url, lang)
 
     try:
+        if post_type in {"slideshow", "youtube_community"}:
+            return _transcribe_slideshow_audio(url, transcript_prompt, model, post_type)
         if platform == "youtube":
             return _analyze_youtube(url, transcript_prompt, model)
         return _analyze_downloaded(url, transcript_prompt, model)
@@ -3255,8 +3410,9 @@ def do_ask_about_video(
     question: str,
     model: str = DEFAULT_MODEL,
 ) -> str:
-    """Ask a specific question about a video."""
+    """Ask a specific question about a video or photo/slideshow post."""
     validate_url(url)
+    post_type = _detect_post_type_for_routing(url)
     question_prompt = (
         f"Watch this video carefully, then answer the following question:\n\n"
         f"Question: {question}\n\n"
@@ -3267,6 +3423,8 @@ def do_ask_about_video(
     logger.info("ask_about_video: platform=%s, url=%s", platform, url)
 
     try:
+        if post_type in {"slideshow", "youtube_community"}:
+            return _analyze_slideshow_post(url, question_prompt, model, post_type=post_type)
         if platform == "youtube":
             return _analyze_youtube(url, question_prompt, model)
         return _analyze_downloaded(url, question_prompt, model)
@@ -4589,9 +4747,11 @@ def analyze_video(
     prompt: str = DEFAULT_ANALYSIS_PROMPT,
     model: str = DEFAULT_MODEL,
 ) -> str:
-    """Analyze a video from YouTube, TikTok, or Instagram.
+    """Analyze a video or photo/slideshow post from YouTube, TikTok, or Instagram.
 
     Provides comprehensive audio + visual analysis using Gemini AI.
+    Works with videos AND photo/slideshow posts on TikTok, Instagram, and
+    YouTube community posts.
     YouTube videos are analyzed directly and return the result immediately.
     TikTok and Instagram videos are processed in the background — the tool
     returns a job_id. Use check_analysis_job(job_id) to poll for the result.
@@ -4615,10 +4775,11 @@ def get_transcript(
     lang: str = "auto",
     model: str = DEFAULT_MODEL,
 ) -> str:
-    """Extract speech transcript from a video with timestamps.
+    """Extract speech transcript from a video or slideshow audio track.
 
     YouTube returns the result immediately. TikTok/Instagram return a job_id —
     use check_analysis_job(job_id) to poll for the result.
+    Slideshows without audio return a structured slideshow_no_audio response.
 
     Args:
         url: The video URL (YouTube, TikTok, Instagram, or other).
@@ -4639,8 +4800,10 @@ def ask_about_video(
     question: str,
     model: str = DEFAULT_MODEL,
 ) -> str:
-    """Ask a specific question about a video.
+    """Ask a specific question about a video or photo/slideshow post.
 
+    Works with videos AND photo/slideshow posts on TikTok, Instagram, and
+    YouTube community posts.
     YouTube returns the answer immediately. TikTok/Instagram return a job_id —
     use check_analysis_job(job_id) to poll for the result.
 
@@ -4969,6 +5132,19 @@ def _parse_gemini_json(text: str) -> dict:
     if not isinstance(data, dict):
         raise ValueError("Expected a JSON object from Gemini")
 
+    if data.get("post_type") == "slideshow":
+        for key in ("title", "platform", "steps", "summary"):
+            if key not in data:
+                raise ValueError(f"Slideshow JSON missing required key: {key!r}")
+        if not isinstance(data["steps"], list):
+            raise ValueError("'steps' must be a list")
+        for step in data["steps"]:
+            if not isinstance(step, dict):
+                raise ValueError("Each slideshow step must be an object")
+            if "image_index" not in step:
+                raise ValueError("Slideshow step missing image_index")
+        return data
+
     if data.get("is_tutorial"):
         for key in ("title", "steps", "prerequisites"):
             if key not in data:
@@ -5035,6 +5211,17 @@ def _validate_tutorial_steps_payload(
     if not isinstance(analysis, dict):
         return None, '"analysis" must be a JSON object when provided'
 
+    if analysis.get("post_type") == "slideshow":
+        steps = analysis.get("steps")
+        if not isinstance(steps, list):
+            return None, 'when "post_type" is "slideshow", "steps" must be an array'
+        for idx, step in enumerate(steps, start=1):
+            if not isinstance(step, dict):
+                return None, f"steps[{idx}] must be an object"
+            if "image_index" not in step:
+                return None, f'steps[{idx}] missing "image_index"'
+        return analysis, None
+
     if "is_tutorial" not in analysis:
         return None, 'missing required field "is_tutorial"'
     if not isinstance(analysis.get("is_tutorial"), bool):
@@ -5096,6 +5283,7 @@ def do_watch_and_analyze(
 ) -> str:
     """Download/stream a video, analyze it for technical tutorial content."""
     validate_url(url)
+    post_type = _detect_post_type_for_routing(url)
     platform = detect_platform(url)
     logger.info("watch_and_analyze: platform=%s, url=%s", platform, url)
 
@@ -5103,11 +5291,23 @@ def do_watch_and_analyze(
     if lang and lang != "auto":
         lang_hint = f"\n\nIMPORTANT: The video is in {lang}. Extract all content in that language."
 
-    prompt = TUTORIAL_ANALYSIS_PROMPT + lang_hint
+    prompt = (
+        SLIDESHOW_TUTORIAL_ANALYSIS_PROMPT
+        if post_type in {"slideshow", "youtube_community"}
+        else TUTORIAL_ANALYSIS_PROMPT
+    ) + lang_hint
 
     raw_response = ""
     try:
-        if platform == "youtube":
+        if post_type in {"slideshow", "youtube_community"}:
+            raw_response = _analyze_slideshow_post(
+                url,
+                prompt,
+                model,
+                None if lang == "auto" else lang,
+                post_type=post_type,
+            )
+        elif platform == "youtube":
             raw_response = _analyze_youtube(url, prompt, model)
         else:
             raw_response = _analyze_downloaded(url, prompt, model)
@@ -5161,6 +5361,13 @@ def do_execute_tutorial_steps(
     if validation_error:
         return _tutorial_steps_validation_error(validation_error)
     assert analysis is not None
+
+    if analysis.get("post_type") == "slideshow":
+        return (
+            "This analysis came from a slideshow/photo post. "
+            "Slideshows can contain visual steps, but they do not include "
+            "executable command steps, so execute_tutorial_steps will not run them."
+        )
 
     if not analysis.get("is_tutorial", False):
         desc = analysis.get("description", "Unknown content")
