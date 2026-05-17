@@ -6,6 +6,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.5.2] - 2026-05-17
+
+### Added
+- `prepare_slideshow_assets` tool returns ordered slideshow images directly as MCP image blocks for client-side vision analysis.
+
+### Fixed
+- Instagram empty playlist photo posts now route to the slideshow fallback instead of returning `unknown`.
+- Gemini slideshow prompts now label each uploaded image with its 1-based image index to reduce slide-order confusion.
+
 ## [1.5.1] - 2026-05-17
 
 ### Fixed

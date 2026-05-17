@@ -11,6 +11,7 @@ Video URL Analyzer MCP is a Model Context Protocol server that analyzes videos f
 - analyze_video(url, prompt?) - Full analysis of video content
 - get_transcript(url) - Extract spoken transcript with timestamps
 - ask_about_video(url, question) - Ask specific questions about video
+- prepare_slideshow_assets(url, include_audio?) - Return ordered slideshow images directly to the client AI for native vision analysis
 - watch_and_analyze(url) - Extract tutorial steps and commands
 - execute_tutorial_steps(steps_json, confirm?) - Execute extracted steps
 - check_analysis_job(job_id) - Poll async job status

@@ -42,6 +42,7 @@ v1.4 exposes **17 MCP tools**:
 | `analyze_video` | Full audio + visual analysis with custom prompts. Uses Gemini multimodal understanding. |
 | `get_transcript` | Extract timestamped transcript with speaker identification. Supports 100+ languages via auto-detection. |
 | `ask_about_video` | Ask any question about the video content. |
+| `prepare_slideshow_assets` | Return ordered slideshow images as MCP image blocks so Claude/the client AI can inspect them directly. |
 | `find_video_moments` | Find matching moments with compact/standard/full structured output. |
 | `analyze_video_segment` | Analyze only a selected time range. |
 | `prepare_video_context` | Analyze once and save a reusable local context for follow-up questions and evidence lookup. |

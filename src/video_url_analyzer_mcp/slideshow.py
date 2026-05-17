@@ -162,6 +162,8 @@ def _has_instagram_slideshow_signal(info: dict[str, Any]) -> bool:
     entries = [entry for entry in info.get("entries") or [] if isinstance(entry, dict)]
     if info.get("_type") == "playlist" and any(_is_image_ext(entry.get("ext")) for entry in entries):
         return True
+    if info.get("_type") == "playlist" and not entries and not _has_video_format(info):
+        return True
     return False
 
 
@@ -827,11 +829,15 @@ def analyze_slideshow(
     try:
         logger.info("Slideshow upload: uploading %d image(s)", len(images))
         upload = upload_file or (lambda file_path: _default_upload_file(client, file_path))
+        image_files: list[Any] = []
         for image_path in images:
-            uploaded_files.append(upload(str(image_path)))
+            image_files.append(upload(str(image_path)))
+        uploaded_files.extend(image_files)
+        audio_file = None
         if audio:
             logger.info("Slideshow upload: uploading audio track")
-            uploaded_files.append(upload(str(audio)))
+            audio_file = upload(str(audio))
+            uploaded_files.append(audio_file)
 
         intro = f"You are analyzing a {platform} photo post containing {len(images)} images"
         if audio:
@@ -843,9 +849,13 @@ def analyze_slideshow(
         else:
             intro += "."
 
-        contents: list[Any] = [intro, *uploaded_files[:len(images)]]
-        if audio:
-            contents.append(uploaded_files[-1])
+        contents: list[Any] = [intro]
+        for index, image_file in enumerate(image_files, start=1):
+            contents.append(f"Image {index} of {len(images)}. Analyze this image before moving to the next one.")
+            contents.append(image_file)
+        if audio_file:
+            contents.append("Background audio/music track for the slideshow.")
+            contents.append(audio_file)
         contents.append(prompt)
 
         logger.info("Slideshow analysis: model=%s files=%d", model, len(uploaded_files))

@@ -25,7 +25,7 @@ Config file locations:
 Prerequisites:
 - uv installed: curl -LsSf https://astral.sh/uv/install.sh | sh (or: winget install astral-sh.uv)
 - GEMINI_API_KEY from https://aistudio.google.com/apikey
-- Supports video URLs plus TikTok Photo Mode, Instagram Carousel/photo posts, and YouTube Community image posts.
+- Supports video URLs plus TikTok Photo Mode, Instagram Carousel/photo posts, and YouTube Community image posts. Use `prepare_slideshow_assets` when the client AI should inspect ordered images itself.
 
 For Claude Code:
 ```bash
