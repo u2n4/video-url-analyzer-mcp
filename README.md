@@ -1,3 +1,4 @@
+<!-- mcp-name: io.github.u2n4/video-url-analyzer-mcp -->
 <p align="center">
   <img src="assets/banner.png" alt="Video Analyzer MCP Server" width="100%">
 </p>
