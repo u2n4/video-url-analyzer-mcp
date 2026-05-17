@@ -6,6 +6,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.5.1] - 2026-05-17
+
+### Fixed
+- Added mcp-name marker to README for MCP Registry ownership validation.
+
 ### Added
 - Slideshow / Photo Post support: analyze_video and ask_about_video now handle TikTok Photo Mode, Instagram Carousel, and YouTube Community Posts.
 - Multimodal analysis: all images + audio track sent to Gemini in a single request.
