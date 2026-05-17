@@ -73,3 +73,72 @@ def test_analyze_downloaded_routes_video_branch(monkeypatch, tmp_path):
 
     assert result == "video result"
     assert calls == ["video", f"upload:{video}", "generate"]
+
+
+def test_prepare_slideshow_assets_returns_ordered_image_blocks(monkeypatch, tmp_path):
+    image_paths = []
+    for index in range(1, 3):
+        image = tmp_path / f"slide_{index}.jpg"
+        image.write_bytes(b"\xff\xd8" + bytes([index]) * 2048)
+        image_paths.append(image)
+
+    monkeypatch.setattr(server, "detect_post_type", lambda url: "slideshow")
+    monkeypatch.setattr(server, "_validate_slideshow_download", lambda slideshow, url: None)
+    monkeypatch.setattr(
+        server,
+        "download_slideshow",
+        lambda url, output_dir, post_type: {
+            "images": image_paths,
+            "audio": None,
+            "metadata": {
+                "platform": "instagram",
+                "caption": "caption text",
+                "image_count": 2,
+            },
+        },
+    )
+
+    result = server.do_prepare_slideshow_assets("https://www.instagram.com/p/example/")
+
+    assert result[0].startswith("Analyze these 2 slideshow images in order.")
+    assert "Caption: caption text" in result
+    assert "image_index=1; image_count=2" in result
+    assert "image_index=2; image_count=2" in result
+    image_blocks = [item for item in result if getattr(item, "type", None) == "image"]
+    assert len(image_blocks) == 2
+
+
+def test_analyze_slideshow_labels_images_before_gemini(monkeypatch, tmp_path):
+    from video_url_analyzer_mcp import slideshow
+
+    image_paths = []
+    for index in range(1, 3):
+        image = tmp_path / f"slide_{index}.jpg"
+        image.write_bytes(b"\xff\xd8" + bytes([index]) * 2048)
+        image_paths.append(image)
+
+    captured = {}
+    fake_files = [SimpleNamespace(name="files/1"), SimpleNamespace(name="files/2")]
+
+    def fake_generate_content(**kwargs):
+        captured["contents"] = kwargs["contents"]
+        return SimpleNamespace(text="ok")
+
+    result = slideshow.analyze_slideshow(
+        FakeClient(),
+        "model",
+        {
+            "images": image_paths,
+            "audio": None,
+            "metadata": {"platform": "instagram", "caption": None},
+        },
+        "prompt",
+        "English",
+        upload_file=lambda path: fake_files.pop(0),
+        generate_content=fake_generate_content,
+    )
+
+    assert result == "ok"
+    assert captured["contents"][1] == "Image 1 of 2. Analyze this image before moving to the next one."
+    assert captured["contents"][3] == "Image 2 of 2. Analyze this image before moving to the next one."
+    assert captured["contents"][-1] == "prompt"

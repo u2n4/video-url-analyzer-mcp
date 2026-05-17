@@ -27,6 +27,7 @@ from urllib.error import URLError
 
 from dotenv import load_dotenv
 from fastmcp import FastMCP
+from fastmcp.utilities.types import Audio, Image
 from google import genai
 from google.genai import errors, types
 from pydantic import BaseModel, Field
@@ -3246,6 +3247,69 @@ def _transcribe_slideshow_audio(
         shutil.rmtree(temp_dir, ignore_errors=True)
 
 
+def do_prepare_slideshow_assets(
+    url: str,
+    include_audio: bool = False,
+) -> list[Any]:
+    """Return slideshow images as MCP content blocks so the client model can inspect them."""
+    validate_url(url)
+    post_type = _detect_post_type_for_routing(url)
+    if post_type not in {"slideshow", "youtube_community"}:
+        raise VideoAnalyzerError(
+            "This URL was not detected as a photo/slideshow post. "
+            "Use analyze_video for regular videos.",
+            code="not_slideshow",
+            platform=detect_platform(url),
+        )
+
+    slideshow, temp_dir = _download_slideshow_for_url(url, post_type)
+    try:
+        metadata = slideshow.get("metadata") or {}
+        images = [Path(path) for path in slideshow.get("images") or []]
+        audio = Path(slideshow["audio"]) if slideshow.get("audio") else None
+        platform = metadata.get("platform") or detect_platform(url)
+        caption = metadata.get("caption")
+
+        content: list[Any] = [
+            (
+                f"Analyze these {len(images)} slideshow images in order. "
+                f"Platform: {platform}. Source URL: {url}. "
+                "Each image is preceded by its 1-based image_index label; "
+                "preserve that order in your answer."
+            )
+        ]
+        if caption:
+            content.append(f"Caption: {caption}")
+
+        for index, image_path in enumerate(images, start=1):
+            content.append(f"image_index={index}; image_count={len(images)}")
+            content.append(Image(path=image_path).to_image_content())
+
+        if audio:
+            if include_audio:
+                content.append("audio_track=background music/audio for this slideshow")
+                content.append(Audio(path=audio).to_audio_content())
+            else:
+                content.append(
+                    "audio_track_available=true; call get_transcript on this URL "
+                    "to transcribe or describe the audio track."
+                )
+        else:
+            content.append("audio_track_available=false")
+
+        return content
+    except Exception as exc:
+        if isinstance(exc, VideoAnalyzerError):
+            raise
+        raise VideoAnalyzerError(
+            f"Could not prepare slideshow assets: {exc}",
+            code="prepare_slideshow_assets_failed",
+            platform=detect_platform(url),
+        ) from exc
+    finally:
+        shutil.rmtree(temp_dir, ignore_errors=True)
+
+
 def _analyze_youtube(url: str, prompt: str, model: str) -> str:
     """Analyze a YouTube video directly via Gemini (no download)."""
     normalized_url = _normalize_youtube_url(url)
@@ -4818,6 +4882,30 @@ def ask_about_video(
     return _dispatch_or_background(
         "ask_about_video", url, do_ask_about_video, url, question, model,
     )
+
+
+@mcp.tool()
+def prepare_slideshow_assets(
+    url: str,
+    include_audio: bool = False,
+) -> list[Any]:
+    """Return slideshow images as ordered MCP image blocks for client-side vision.
+
+    This tool does not call Gemini. It downloads TikTok Photo Mode,
+    Instagram photo/carousel posts, or YouTube community post images, then
+    returns each image directly to the MCP client with an explicit
+    image_index label. Use it when you want Claude/the client AI to inspect
+    the images itself instead of receiving a Gemini-generated analysis.
+
+    Args:
+        url: TikTok Photo Mode, Instagram photo/carousel, or YouTube community URL.
+        include_audio: If true and a slideshow audio track exists, include it
+            as an MCP audio block. Defaults to false to keep responses lighter.
+
+    Returns:
+        Ordered text + image content blocks, optionally including audio.
+    """
+    return do_prepare_slideshow_assets(url, include_audio)
 
 
 @mcp.tool()

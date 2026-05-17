@@ -100,6 +100,13 @@ def test_detect_instagram_single_photo_from_no_video_error(fake_ytdlp):
     assert slideshow.detect_post_type(url) == "slideshow"
 
 
+def test_detect_instagram_empty_playlist_without_video_as_slideshow(fake_ytdlp):
+    url = "https://www.instagram.com/p/empty-playlist/"
+    fake_ytdlp.responses[url] = {"_type": "playlist", "entries": [], "formats": []}
+
+    assert slideshow.detect_post_type(url) == "slideshow"
+
+
 def test_detect_youtube_video(fake_ytdlp):
     url = "https://www.youtube.com/watch?v=abc123"
     fake_ytdlp.responses[url] = {"formats": [{"vcodec": "vp9", "acodec": "opus"}]}
