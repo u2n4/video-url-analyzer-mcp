@@ -196,7 +196,7 @@ macOS/Linux). Explicit per-call `model=` arguments still win over env vars.
 | Variable | Effect | Default |
 |---|---|---|
 | `VIDEO_ANALYZER_MODEL` | Single-knob default for both fast and deep model resolution. | _unset_ |
-| `GEMINI_FAST_MODEL` | Overrides the model used for compact/standard detail modes. | `gemini-3.1-flash-lite-preview` |
+| `GEMINI_FAST_MODEL` | Overrides the model used for compact/standard detail modes. | `gemini-3.5-flash` |
 | `GEMINI_DEEP_MODEL` | Overrides the model used for the `full` detail mode. | `gemini-3.1-pro-preview` |
 
 Resolution order at call time:

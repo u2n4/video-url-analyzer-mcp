@@ -762,11 +762,27 @@ def _default_generate_content(client: Any, **kwargs):
     raise SlideshowError("Gemini generate_content retry loop exited unexpectedly.")
 
 
-def _default_config() -> types.GenerateContentConfig:
-    return types.GenerateContentConfig(
-        media_resolution=types.MediaResolution.MEDIA_RESOLUTION_HIGH,
-        thinking_config=types.ThinkingConfig(thinking_level=types.ThinkingLevel.HIGH),
-    )
+def _model_id(model: str) -> str:
+    return model.strip().removeprefix("models/").lower()
+
+
+def _thinking_config_for_model(model: str) -> types.ThinkingConfig | None:
+    normalized = _model_id(model)
+    if normalized.startswith("gemini-3"):
+        return types.ThinkingConfig(thinking_level="high")
+    if normalized.startswith("gemini-2.5"):
+        return types.ThinkingConfig(thinking_budget=-1)
+    return None
+
+
+def _default_config(model: str) -> types.GenerateContentConfig:
+    kwargs: dict[str, Any] = {
+        "media_resolution": types.MediaResolution.MEDIA_RESOLUTION_HIGH,
+    }
+    thinking_config = _thinking_config_for_model(model)
+    if thinking_config is not None:
+        kwargs["thinking_config"] = thinking_config
+    return types.GenerateContentConfig(**kwargs)
 
 
 def _response_text(response: Any) -> str:
@@ -860,7 +876,7 @@ def analyze_slideshow(
 
         logger.info("Slideshow analysis: model=%s files=%d", model, len(uploaded_files))
         generator = generate_content or (lambda **kwargs: _default_generate_content(client, **kwargs))
-        response = generator(model=model, contents=contents, config=config or _default_config())
+        response = generator(model=model, contents=contents, config=config or _default_config(model))
         return _response_text(response)
     finally:
         logger.info("Slideshow cleanup: uploaded=%d local_files=%d", len(uploaded_files), len(images) + int(audio is not None))

@@ -39,7 +39,7 @@ if exist "%~dp0.env.keys.local" (
 
 rem --- Safe defaults (do not override values already in the environment) ----
 if "%VIDEO_ANALYZER_MODE%"=="" set "VIDEO_ANALYZER_MODE=auto"
-if "%VIDEO_ANALYZER_MODEL%"=="" set "VIDEO_ANALYZER_MODEL=gemini-3.1-flash-lite-preview"
+if "%VIDEO_ANALYZER_MODEL%"=="" set "VIDEO_ANALYZER_MODEL=gemini-3.5-flash"
 
 rem --- Local checkout fallback: prepend src to PYTHONPATH if it exists ------
 if exist "%~dp0src\video_url_analyzer_mcp\server.py" (

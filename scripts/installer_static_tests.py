@@ -2,7 +2,7 @@
 
 Verifies file presence, README modernization, gitignore coverage, the
 absence of accidentally-committed API key material in the new files,
-and the v1.2.0 model/version contract.
+and the current model/version contract.
 """
 
 import asyncio
@@ -14,8 +14,8 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-EXPECTED_VERSION = "1.2.0"
-DEFAULT_FAST_MODEL = "gemini-3.1-flash-lite-preview"
+EXPECTED_VERSION = "1.5.2"
+DEFAULT_FAST_MODEL = "gemini-3.5-flash"
 DEFAULT_DEEP_MODEL = "gemini-3.1-pro-preview"
 
 
@@ -206,7 +206,7 @@ def test_client_wizard_backs_up_and_validates():
 
 
 # ---------------------------------------------------------------------------
-# 7. v1.2.0 version + model contract
+# 7. version + model contract
 # ---------------------------------------------------------------------------
 
 def test_pyproject_version():
@@ -316,16 +316,16 @@ def test_start_bat_check_mode_runs():
 # 9. Runtime contract: tool count + import without GEMINI_API_KEY
 # ---------------------------------------------------------------------------
 
-def test_tool_count_remains_17():
+def test_tool_count_remains_18():
     src_path = str((ROOT / "src").resolve())
     if src_path not in sys.path:
         sys.path.insert(0, src_path)
     # Import via importlib to avoid leaking module state between tests
     from video_url_analyzer_mcp import server as _server
     names = {tool.name for tool in asyncio.run(_server.mcp.list_tools())}
-    if len(names) != 17:
-        _fail("tool_count_remains_17", f"expected 17 tools, got {len(names)}: {sorted(names)}")
-    _ok("tool_count_remains_17", "17 tools")
+    if len(names) != 18:
+        _fail("tool_count_remains_18", f"expected 18 tools, got {len(names)}: {sorted(names)}")
+    _ok("tool_count_remains_18", "18 tools")
 
 
 def test_import_without_api_key_subprocess():
@@ -380,7 +380,7 @@ def main():
     test_start_bat_does_not_echo_api_key()
     test_start_bat_avoids_start_command()
     test_start_bat_check_mode_runs()
-    test_tool_count_remains_17()
+    test_tool_count_remains_18()
     test_import_without_api_key_subprocess()
     print("ALL_PASS")
 

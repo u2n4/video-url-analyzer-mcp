@@ -7,11 +7,11 @@
 
 <p align="center">
   <strong>Analyze any video with AI — YouTube, TikTok & Instagram</strong><br>
-  Powered by <a href="https://ai.google.dev/gemini-api">Google Gemini 2.5 Flash</a> &middot; <a href="https://github.com/jlowin/fastmcp">FastMCP</a> &middot; <a href="https://github.com/yt-dlp/yt-dlp">yt-dlp</a>
+  Powered by <a href="https://ai.google.dev/gemini-api">Google Gemini 3.5 Flash</a> &middot; <a href="https://github.com/jlowin/fastmcp">FastMCP</a> &middot; <a href="https://github.com/yt-dlp/yt-dlp">yt-dlp</a>
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/Gemini-2.5_Flash-4285F4?style=for-the-badge&logo=google&logoColor=white" alt="Gemini 2.5 Flash">
+  <img src="https://img.shields.io/badge/Gemini-3.5_Flash-4285F4?style=for-the-badge&logo=google&logoColor=white" alt="Gemini 3.5 Flash">
   <img src="https://img.shields.io/badge/Python-3.10+-3776AB?style=for-the-badge&logo=python&logoColor=white" alt="Python 3.10+">
   <img src="https://img.shields.io/badge/MCP-stdio-00C853?style=for-the-badge" alt="MCP stdio">
   <img src="https://img.shields.io/badge/Security-Hardened-8E24AA?style=for-the-badge&logo=shieldsdotio&logoColor=white" alt="Security Hardened">
@@ -87,7 +87,7 @@ v1.4 exposes **17 MCP tools**:
 
 | Component | Role |
 |-----------|------|
-| **Gemini 2.5 Flash** | Latest multimodal model — full audio + visual understanding in a single pass |
+| **Gemini 3.5 Flash** | Latest Gemini Flash model — full audio + visual understanding in a single pass |
 | **FastMCP 3.x** | MCP protocol framework over stdio transport |
 | **yt-dlp + curl_cffi** | Video download with Chrome browser impersonation to bypass anti-bot. TikTok downloads prefer locally decodable MP4 H.264/H.265 formats and reject ByteDance `bvc2`/`bytevc2` streams. |
 | **tikwm.com API** | TikTok fast-path fallback when yt-dlp is WAF-blocked |
@@ -267,7 +267,7 @@ Cline — live in [`docs/mcp-config-examples.md`](docs/mcp-config-examples.md).
 ## Usage Examples
 
 ```python
-# Full video analysis with Gemini 2.5 Flash
+# Full video analysis with Gemini 3.5 Flash
 analyze_video("https://www.youtube.com/watch?v=dQw4w9WgXcQ")
 
 # Custom analysis prompt
@@ -328,14 +328,14 @@ This server has been hardened against a comprehensive threat model audit:
 | `VIDEO_FFMPEG_TIMEOUT` | Override ffmpeg extraction timeout values, in seconds | Existing per-operation defaults |
 | `VIDEO_GEMINI_TIMEOUT` | Optional Gemini HTTP timeout, in seconds | SDK default |
 | `VIDEO_ANALYZER_MODEL` | Single-knob default model id used for both fast and deep model resolution. Per-call `model=` and `GEMINI_FAST_MODEL` / `GEMINI_DEEP_MODEL` still take precedence. | _unset_ |
-| `GEMINI_FAST_MODEL` | Override for compact/standard detail mode | `gemini-3.1-flash-lite-preview` |
+| `GEMINI_FAST_MODEL` | Override for compact/standard detail mode | `gemini-3.5-flash` |
 | `GEMINI_DEEP_MODEL` | Override for `full` detail mode | `gemini-3.1-pro-preview` |
 
-> Default fast model: `gemini-3.1-flash-lite-preview`. Default deep model
+> Default fast model: `gemini-3.5-flash`. Default deep model
 > (used when `detail="full"`): `gemini-3.1-pro-preview`. Set
 > `VIDEO_ANALYZER_MODEL` to override both at once. Model availability can
 > vary by Google account, region, and API tier — fall back to
-> `gemini-flash-latest` if the 3.1 preview ids are not yet enabled for your
+> `gemini-flash-latest` if the latest ids are not yet enabled for your
 > key.
 | `VIDEO_ANALYZER_MODE` | Behavior preset (`auto` / `api` / `client` / `local`); read by `start.bat` | `auto` |
 
@@ -363,7 +363,7 @@ This server has been hardened against a comprehensive threat model audit:
 
 | Technology | Version | Purpose |
 |-----------|---------|---------|
-| [Google Gemini 2.5 Flash](https://ai.google.dev/gemini-api) | Latest | Multimodal video analysis engine |
+| [Google Gemini 3.5 Flash](https://ai.google.dev/gemini-api) | Latest | Multimodal video analysis engine |
 | [FastMCP](https://github.com/jlowin/fastmcp) | 3.1.0 | MCP protocol framework |
 | [yt-dlp](https://github.com/yt-dlp/yt-dlp) | 2026.3.3 | Video downloader |
 | [curl_cffi](https://github.com/lexiforest/curl_cffi) | 0.14.0 | Browser impersonation (TLS fingerprint) |
@@ -387,7 +387,7 @@ MIT
 
 ### خادم تحليل الفيديو بالذكاء الاصطناعي
 
-خادم MCP لتحليل الفيديو باستخدام **Google Gemini 2.5 Flash** — احدث واقوى نموذج ذكاء اصطناعي متعدد الوسائط من جوجل.
+خادم MCP لتحليل الفيديو باستخدام **Google Gemini 3.5 Flash** — احدث نموذج Gemini Flash متعدد الوسائط من جوجل.
 
 ### المميزات
 
