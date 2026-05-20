@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "video-url-analyzer-mcp"
-version = "1.5.2"
+version = "1.5.3"
 description = "MCP server to analyze YouTube, TikTok & Instagram videos from URL -- transcripts, AI insights, tutorial extraction"
 readme = "README.md"
 license = "MIT"
@@ -34,6 +34,7 @@ dependencies = [
     "python-dotenv>=1.0.0",
     "yt-dlp>=2024.0.0",
     "curl-cffi>=0.7.0",
+    "platformdirs>=3.0.0",
 ]
 
 [project.urls]

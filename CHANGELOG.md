@@ -6,6 +6,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.5.3] - 2026-05-20
+
+### Fixed
+- Server no longer crashes on startup with `PermissionError: [WinError 5]` when launched by GUI MCP clients (Claude Desktop, Cursor, etc.). Data directories now default to the platform user-data location via `platformdirs` instead of relative paths resolved against a protected working directory. Each path is still overridable via `ANALYSES_DIR`, `VIDEO_CONTEXT_DIR`, `VIDEO_SOURCE_DIR`, `VIDEO_ASSET_DIR`, or the new `VIDEO_ANALYZER_DATA_DIR` root.
+- `install.ps1` now writes the absolute path to `uvx` for GUI clients (Claude Desktop, Codex, Cursor, Windsurf, VS Code, Cline, Antigravity) so the server resolves even when the client does not inherit the user `PATH`. Claude Code (CLI) keeps bare `uvx` since it inherits `PATH`.
+- `install.ps1` now detects the Microsoft Store / MSIX build of Claude Desktop and writes to its packaged config path (`%LOCALAPPDATA%\Packages\Claude_*\LocalCache\Roaming\Claude`) instead of only the classic `%APPDATA%\Claude`.
+
+### Added
+- `platformdirs` dependency for cross-platform user-data directory resolution.
+
 ## [1.5.2] - 2026-05-17
 
 ### Added
