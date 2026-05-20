@@ -30,6 +30,7 @@ from fastmcp import FastMCP
 from fastmcp.utilities.types import Audio, Image
 from google import genai
 from google.genai import errors, types
+from platformdirs import user_data_dir
 from pydantic import BaseModel, Field
 from typing import Any, Literal, Optional, cast
 
@@ -485,16 +486,28 @@ mcp = FastMCP("video-analyzer")
 
 PROJECT_ROOT = Path(__file__).resolve().parent
 
+# Default data root in the platform's user-data location so the server works
+# regardless of the launcher's working directory. Claude Desktop and other GUI
+# clients spawn the server with a protected/read-only CWD; relative defaults
+# like "video_contexts" fail with PermissionError there. Each path can still be
+# overridden via env.
+DATA_ROOT = Path(
+    os.environ.get(
+        "VIDEO_ANALYZER_DATA_DIR",
+        user_data_dir("video-url-analyzer-mcp", appauthor=False),
+    )
+)
+
 # Analyses output directory
-ANALYSES_DIR = Path(os.environ.get("ANALYSES_DIR", "./analyses"))
+ANALYSES_DIR = Path(os.environ.get("ANALYSES_DIR", DATA_ROOT / "analyses"))
 ANALYSES_DIR.mkdir(parents=True, exist_ok=True)
 
 # Structured local video memory directory for v1.3.0.
-VIDEO_CONTEXT_DIR = Path(os.environ.get("VIDEO_CONTEXT_DIR", "video_contexts"))
+VIDEO_CONTEXT_DIR = Path(os.environ.get("VIDEO_CONTEXT_DIR", DATA_ROOT / "video_contexts"))
 VIDEO_CONTEXT_DIR.mkdir(parents=True, exist_ok=True)
-VIDEO_SOURCE_DIR = Path(os.environ.get("VIDEO_SOURCE_DIR", "video_sources"))
+VIDEO_SOURCE_DIR = Path(os.environ.get("VIDEO_SOURCE_DIR", DATA_ROOT / "video_sources"))
 VIDEO_SOURCE_DIR.mkdir(parents=True, exist_ok=True)
-VIDEO_ASSET_DIR = Path(os.environ.get("VIDEO_ASSET_DIR", "video_assets"))
+VIDEO_ASSET_DIR = Path(os.environ.get("VIDEO_ASSET_DIR", DATA_ROOT / "video_assets"))
 VIDEO_ASSET_DIR.mkdir(parents=True, exist_ok=True)
 
 # ---------------------------------------------------------------------------

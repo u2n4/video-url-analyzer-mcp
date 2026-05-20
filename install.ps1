@@ -190,13 +190,28 @@ function Configure-ClaudeCode([string]$key) {
   }
 }
 
-function Configure-ClaudeDesktop([string]$key) {
-  $dir = Join-Path $env:APPDATA 'Claude'
+function Get-ClaudeDesktopConfigDir {
+  # Claude Desktop ships in two forms on Windows:
+  #   - classic installer:  %APPDATA%\Claude
+  #   - Microsoft Store/MSIX: %LOCALAPPDATA%\Packages\Claude_*\LocalCache\Roaming\Claude
+  # The Store build only reads its packaged path, so prefer it when present.
+  $store = Get-ChildItem (Join-Path $env:LOCALAPPDATA 'Packages') -Filter 'Claude_*' -Directory -ErrorAction SilentlyContinue |
+    ForEach-Object { Join-Path $_.FullName 'LocalCache\Roaming\Claude' } |
+    Where-Object { Test-Path (Join-Path $_ 'claude_desktop_config.json') } |
+    Select-Object -First 1
+  if ($store) { return $store }
+  # Fall back to classic path (also used when neither config exists yet).
+  return (Join-Path $env:APPDATA 'Claude')
+}
+
+function Configure-ClaudeDesktop([string]$key, [string]$uvxCmd) {
+  $dir = Get-ClaudeDesktopConfigDir
   $cfg = Join-Path $dir 'claude_desktop_config.json'
   if (-not (Test-Path $dir)) {
     if (-not (Confirm-Yes "Claude Desktop config dir does not exist. Create it?" $true)) { return }
     New-Item -ItemType Directory -Path $dir -Force | Out-Null
   }
+  Write-Info "Claude Desktop config: $cfg"
   Backup-File $cfg
 
   $current = $null
@@ -209,7 +224,8 @@ function Configure-ClaudeDesktop([string]$key) {
     $current | Add-Member -NotePropertyName mcpServers -NotePropertyValue ([pscustomobject]@{})
   }
 
-  $entry = [ordered]@{ command = 'uvx'; args = @($PkgName) }
+  $cmd = if ($uvxCmd) { $uvxCmd } else { 'uvx' }
+  $entry = [ordered]@{ command = $cmd; args = @($PkgName) }
   $envBlock = Build-EnvBlock $key
   if ($envBlock.Count -gt 0) { $entry['env'] = $envBlock }
 
@@ -224,7 +240,7 @@ function Configure-ClaudeDesktop([string]$key) {
   Write-Ok "Updated $cfg. Restart Claude Desktop to load the server."
 }
 
-function Configure-Codex([string]$key) {
+function Configure-Codex([string]$key, [string]$uvxCmd) {
   $dir = Join-Path $env:USERPROFILE '.codex'
   $cfg = Join-Path $dir 'config.toml'
   if (-not (Test-Path $dir)) {
@@ -238,7 +254,9 @@ function Configure-Codex([string]$key) {
     $escaped = $key -replace '"', '\"'
     $envToml = "`r`n[mcp_servers.$ServerName.env]`r`nGEMINI_API_KEY = `"$escaped`"`r`n"
   }
-  $section = "`r`n[mcp_servers.$ServerName]`r`ncommand = `"uvx`"`r`nargs = [`"$PkgName`"]`r`n$envToml"
+  $cmd = if ($uvxCmd) { $uvxCmd } else { 'uvx' }
+  $cmdToml = $cmd -replace '\\', '\\' -replace '"', '\"'
+  $section = "`r`n[mcp_servers.$ServerName]`r`ncommand = `"$cmdToml`"`r`nargs = [`"$PkgName`"]`r`n$envToml"
 
   $existing = ''
   if (Test-Path $cfg) { $existing = Get-Content $cfg -Raw }
@@ -273,6 +291,7 @@ function Configure-JsonClient {
     [string]$Path,
     [string]$RootKey,
     [string]$Key,
+    [string]$UvxCmd,
     [switch]$IncludeType
   )
   $dir = Split-Path -Parent $Path
@@ -294,7 +313,7 @@ function Configure-JsonClient {
 
   $entry = [ordered]@{}
   if ($IncludeType) { $entry['type'] = 'stdio' }
-  $entry['command'] = 'uvx'
+  $entry['command'] = if ($UvxCmd) { $UvxCmd } else { 'uvx' }
   $entry['args'] = @($PkgName)
   $envBlock = Build-EnvBlock $Key
   if ($envBlock.Count -gt 0) { $entry['env'] = $envBlock }
@@ -311,13 +330,13 @@ function Configure-JsonClient {
   Write-Ok "Updated $Path. Restart $Label to load the server."
 }
 
-function Configure-Cursor([string]$key) {
-  Configure-JsonClient -Label 'Cursor' -Path (Join-Path $env:USERPROFILE '.cursor\mcp.json') -RootKey 'mcpServers' -Key $key
+function Configure-Cursor([string]$key, [string]$uvxCmd) {
+  Configure-JsonClient -Label 'Cursor' -Path (Join-Path $env:USERPROFILE '.cursor\mcp.json') -RootKey 'mcpServers' -Key $key -UvxCmd $uvxCmd
 }
-function Configure-Windsurf([string]$key) {
-  Configure-JsonClient -Label 'Windsurf' -Path (Join-Path $env:USERPROFILE '.codeium\windsurf\mcp_config.json') -RootKey 'mcpServers' -Key $key
+function Configure-Windsurf([string]$key, [string]$uvxCmd) {
+  Configure-JsonClient -Label 'Windsurf' -Path (Join-Path $env:USERPROFILE '.codeium\windsurf\mcp_config.json') -RootKey 'mcpServers' -Key $key -UvxCmd $uvxCmd
 }
-function Configure-VSCode([string]$key) {
+function Configure-VSCode([string]$key, [string]$uvxCmd) {
   $dir = Join-Path $env:APPDATA 'Code\User'
   $cfg = Join-Path $dir 'mcp.json'
   if (-not (Test-Path $dir)) {
@@ -352,7 +371,7 @@ function Configure-VSCode([string]$key) {
 
   $entry = [ordered]@{
     type = 'stdio'
-    command = 'uvx'
+    command = if ($uvxCmd) { $uvxCmd } else { 'uvx' }
     args = @($PkgName)
     env = [ordered]@{ GEMINI_API_KEY = '${input:video-url-analyzer-gemini-api-key}' }
   }
@@ -366,13 +385,13 @@ function Configure-VSCode([string]$key) {
   Set-Content -Path $cfg -Value $json -Encoding UTF8
   Write-Ok "Updated $cfg. VS Code will prompt for the Gemini key when the server starts."
 }
-function Configure-Cline([string]$key) {
+function Configure-Cline([string]$key, [string]$uvxCmd) {
   $p = Join-Path $env:USERPROFILE '.cline\data\settings\cline_mcp_settings.json'
-  Configure-JsonClient -Label 'Cline' -Path $p -RootKey 'mcpServers' -Key $key
+  Configure-JsonClient -Label 'Cline' -Path $p -RootKey 'mcpServers' -Key $key -UvxCmd $uvxCmd
 }
-function Configure-Antigravity([string]$key) {
+function Configure-Antigravity([string]$key, [string]$uvxCmd) {
   $p = Join-Path $env:USERPROFILE '.gemini\antigravity\mcp_config.json'
-  Configure-JsonClient -Label 'Antigravity' -Path $p -RootKey 'mcpServers' -Key $key
+  Configure-JsonClient -Label 'Antigravity' -Path $p -RootKey 'mcpServers' -Key $key -UvxCmd $uvxCmd
 }
 
 # ---------------------------------------------------------------------------
@@ -457,15 +476,15 @@ Write-Info ("Configuring: " + ($targets -join ', '))
 foreach ($t in $targets) {
   switch ($t.ToLower()) {
     'claude-code'    { Configure-ClaudeCode $key }
-    'claude-desktop' { Configure-ClaudeDesktop $key }
-    'codex'          { Configure-Codex $key }
-    'cursor'         { Configure-Cursor $key }
-    'windsurf'       { Configure-Windsurf $key }
-    'vscode'         { Configure-VSCode $key }
-    'code'           { Configure-VSCode $key }
-    'antigravity'    { Configure-Antigravity $key }
-    'anti-gravity'   { Configure-Antigravity $key }
-    'cline'          { Configure-Cline $key }
+    'claude-desktop' { Configure-ClaudeDesktop $key $uvxPath }
+    'codex'          { Configure-Codex $key $uvxPath }
+    'cursor'         { Configure-Cursor $key $uvxPath }
+    'windsurf'       { Configure-Windsurf $key $uvxPath }
+    'vscode'         { Configure-VSCode $key $uvxPath }
+    'code'           { Configure-VSCode $key $uvxPath }
+    'antigravity'    { Configure-Antigravity $key $uvxPath }
+    'anti-gravity'   { Configure-Antigravity $key $uvxPath }
+    'cline'          { Configure-Cline $key $uvxPath }
     default          { Write-Warn "Unknown target '$t' (use: claude-code, claude-desktop, codex, cursor, windsurf, vscode, antigravity, cline, or all)." }
   }
 }
