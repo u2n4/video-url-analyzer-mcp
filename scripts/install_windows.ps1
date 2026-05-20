@@ -165,17 +165,17 @@ if ($apiKey) {
 # 5. Default model (VIDEO_ANALYZER_MODEL)
 # ---------------------------------------------------------------------------
 $modelChoice = Read-Choice -prompt "Pick a default model (sets VIDEO_ANALYZER_MODEL):" -options @(
-  "Recommended balanced: gemini-3.1-pro-preview (if your account has Pro access)",
-  "Fast/cheap: gemini-3.1-flash-lite-preview",
+  "Recommended latest Flash: gemini-3.5-flash",
+  "Deep/Pro: gemini-3.1-pro-preview (if your account has Pro access)",
   "Stable fallback: gemini-flash-latest",
   "Custom model string",
   "Skip (leave existing default behavior)"
-) -default 3
+) -default 1
 
 $selectedModel = $null
 switch ($modelChoice) {
-  1 { $selectedModel = 'gemini-3.1-pro-preview' }
-  2 { $selectedModel = 'gemini-3.1-flash-lite-preview' }
+  1 { $selectedModel = 'gemini-3.5-flash' }
+  2 { $selectedModel = 'gemini-3.1-pro-preview' }
   3 { $selectedModel = 'gemini-flash-latest' }
   4 {
     if (-not $NonInteractive) {

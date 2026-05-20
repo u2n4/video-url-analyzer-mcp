@@ -228,14 +228,14 @@ logging.basicConfig(
 )
 logger = logging.getLogger("video-analyzer")
 
-# Default Gemini models for v1.2.0. Override priority at call time:
+# Default Gemini models. Override priority at call time:
 #   1. explicit per-tool ``model=`` argument
 #   2. ``GEMINI_FAST_MODEL`` / ``GEMINI_DEEP_MODEL`` env vars (see _resolve_model)
 #   3. ``VIDEO_ANALYZER_MODEL`` umbrella env var
 #   4. the hardcoded fallbacks below
 # ``gemini-flash-latest`` is kept as a documented stable fallback option but is
 # no longer the default.
-FAST_MODEL_FALLBACK = "gemini-3.1-flash-lite-preview"
+FAST_MODEL_FALLBACK = "gemini-3.5-flash"
 DEEP_MODEL_FALLBACK = "gemini-3.1-pro-preview"
 _VIDEO_ANALYZER_MODEL_OVERRIDE = (
     os.environ.get("VIDEO_ANALYZER_MODEL", "").strip() or None
@@ -250,6 +250,36 @@ DEEP_MAX_OUTPUT_TOKENS = 32000
 
 _client: genai.Client | None = None
 _client_lock = threading.Lock()
+
+
+def _model_id(model: str) -> str:
+    return model.strip().removeprefix("models/").lower()
+
+
+def _thinking_config_for_model(
+    model: str,
+    thinking_name: str = "HIGH",
+) -> types.ThinkingConfig | None:
+    """Build model-family compatible thinking config.
+
+    Gemini 3 uses thinking_level. Gemini 2.5 rejects thinking_level and uses
+    thinking_budget instead.
+    """
+    normalized = _model_id(model)
+    name = thinking_name.strip().lower()
+    if normalized.startswith("gemini-3"):
+        return types.ThinkingConfig(thinking_level=name)
+    if normalized.startswith("gemini-2.5"):
+        budget_by_level = {
+            "minimal": 0,
+            "low": 1024,
+            "medium": 4096,
+            "high": -1,
+        }
+        return types.ThinkingConfig(
+            thinking_budget=budget_by_level.get(name, -1)
+        )
+    return None
 
 
 def _env_int(name: str, default: int, minimum: int = 1) -> int:
@@ -433,21 +463,22 @@ def _error_response(
 DEFAULT_MODEL = FAST_MODEL_DEFAULT
 
 
-def _build_analysis_config() -> types.GenerateContentConfig:
+def _build_analysis_config(model: str = DEFAULT_MODEL) -> types.GenerateContentConfig:
     """High-fidelity multimodal analysis config.
 
     - MEDIA_RESOLUTION_HIGH: processes images at the highest supported
       resolution globally, so small on-screen text (captions, benchmark
       tables, fine details in carousel slides) is readable.
-    - ThinkingLevel.HIGH: maximum reasoning budget for deep analysis;
-      closes most of the quality gap between Flash and Pro tiers.
+    - Gemini 3 uses ThinkingLevel.HIGH; Gemini 2.5 falls back to dynamic
+      thinkingBudget because 2.5 rejects thinkingLevel.
     """
-    return types.GenerateContentConfig(
-        media_resolution=types.MediaResolution.MEDIA_RESOLUTION_HIGH,
-        thinking_config=types.ThinkingConfig(
-            thinking_level=types.ThinkingLevel.HIGH,
-        ),
-    )
+    kwargs: dict[str, Any] = {
+        "media_resolution": types.MediaResolution.MEDIA_RESOLUTION_HIGH,
+    }
+    thinking_config = _thinking_config_for_model(model, "HIGH")
+    if thinking_config is not None:
+        kwargs["thinking_config"] = thinking_config
+    return types.GenerateContentConfig(**kwargs)
 
 # MCP Server
 mcp = FastMCP("video-analyzer")
@@ -1656,17 +1687,9 @@ def _build_structured_config(
         "response_schema": _gemini_response_schema(schema),
     }
 
-    if _supports_thinking_for_model(model):
-        thinking_name = settings["thinking_name"]
-        thinking_level = _enum_value(
-            types.ThinkingLevel,
-            thinking_name,
-            f"THINKING_LEVEL_{thinking_name}",
-        )
-        if thinking_level is not None:
-            kwargs["thinking_config"] = types.ThinkingConfig(
-                thinking_level=thinking_level,
-            )
+    thinking_config = _thinking_config_for_model(model, settings["thinking_name"])
+    if thinking_config is not None:
+        kwargs["thinking_config"] = thinking_config
 
     if _supports_media_for_model(model):
         media_name = settings["media_resolution_name"]
@@ -3201,7 +3224,7 @@ def _analyze_slideshow_post(
             lang,
             upload_file=_upload_to_gemini,
             generate_content=_generate_content_with_retry,
-            config=_build_analysis_config(),
+            config=_build_analysis_config(model),
         )
         return _truncate_response(result)
     finally:
@@ -3239,7 +3262,7 @@ def _transcribe_slideshow_audio(
                 uploaded_file,
                 transcript_prompt,
             ],
-            config=_build_analysis_config(),
+            config=_build_analysis_config(model),
         )
         return _truncate_response(_require_response_text(response))
     finally:
@@ -3325,7 +3348,7 @@ def _analyze_youtube(url: str, prompt: str, model: str) -> str:
                 types.Part(text=prompt),
             ]
         ),
-        config=_build_analysis_config(),
+        config=_build_analysis_config(model),
     )
     return _truncate_response(_require_response_text(response))
 
@@ -3367,7 +3390,7 @@ def _analyze_downloaded(url: str, prompt: str, model: str) -> str:
         response = _generate_content_with_retry(
             model=model,
             contents=contents,
-            config=_build_analysis_config(),
+            config=_build_analysis_config(model),
         )
         return _truncate_response(_require_response_text(response))
     finally:
@@ -4823,7 +4846,7 @@ def analyze_video(
     Args:
         url: The video URL (YouTube, TikTok, Instagram, or other).
         prompt: Custom analysis prompt. Defaults to comprehensive analysis.
-        model: Gemini model to use. Defaults to gemini-2.5-flash.
+        model: Gemini model to use. Defaults to gemini-3.5-flash.
 
     Returns:
         Analysis text (YouTube) or JSON with job_id (TikTok/Instagram).
@@ -4848,7 +4871,7 @@ def get_transcript(
     Args:
         url: The video URL (YouTube, TikTok, Instagram, or other).
         lang: Language hint (e.g., 'en', 'ar', 'auto'). Defaults to auto-detect.
-        model: Gemini model to use. Defaults to gemini-2.5-flash.
+        model: Gemini model to use. Defaults to gemini-3.5-flash.
 
     Returns:
         Transcript text (YouTube) or JSON with job_id (TikTok/Instagram).
@@ -4874,7 +4897,7 @@ def ask_about_video(
     Args:
         url: The video URL (YouTube, TikTok, Instagram, or other).
         question: Your question about the video.
-        model: Gemini model to use. Defaults to gemini-2.5-flash.
+        model: Gemini model to use. Defaults to gemini-3.5-flash.
 
     Returns:
         Answer text (YouTube) or JSON with job_id (TikTok/Instagram).
@@ -5599,7 +5622,7 @@ def watch_and_analyze(
     Args:
         url: Video URL (YouTube, TikTok, Instagram).
         lang: Language hint (e.g., 'en', 'ar', 'auto'). Defaults to auto-detect.
-        model: Gemini model to use. Defaults to gemini-2.5-flash.
+        model: Gemini model to use. Defaults to gemini-3.5-flash.
 
     Returns:
         JSON with tutorial analysis (YouTube) or JSON with job_id (TikTok/Instagram).

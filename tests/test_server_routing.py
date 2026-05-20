@@ -14,6 +14,27 @@ class FakeClient:
     files = FakeFiles()
 
 
+def test_default_fast_model_uses_latest_gemini_flash():
+    assert server.DEFAULT_MODEL == "gemini-3.5-flash"
+    assert server.FAST_MODEL_FALLBACK == "gemini-3.5-flash"
+
+
+def test_analysis_config_uses_thinking_level_for_gemini_3():
+    config = server._build_analysis_config("models/gemini-3.5-flash")
+
+    assert config.thinking_config is not None
+    assert config.thinking_config.thinking_level.value == "HIGH"
+    assert config.thinking_config.thinking_budget is None
+
+
+def test_analysis_config_uses_thinking_budget_for_gemini_25():
+    config = server._build_analysis_config("gemini-2.5-flash")
+
+    assert config.thinking_config is not None
+    assert config.thinking_config.thinking_level is None
+    assert config.thinking_config.thinking_budget == -1
+
+
 def test_analyze_downloaded_routes_slideshow_branch(monkeypatch):
     calls: list[str] = []
 
