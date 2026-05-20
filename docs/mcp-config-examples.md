@@ -66,8 +66,8 @@ claude mcp add video-url-analyzer --transport stdio -- uvx video-url-analyzer-mc
 claude mcp add video-url-analyzer --transport stdio -- python -m video_url_analyzer_mcp
 ```
 
-Add `-e GEMINI_API_KEY=YOUR_KEY_HERE` only if you cannot rely on your shell
-environment (not recommended).
+Do not paste a real API key into a command you will share or screenshot. Use
+the installer prompt, your user environment, or your client UI when available.
 
 ---
 
@@ -87,10 +87,22 @@ args = ["video-url-analyzer-mcp"]
 
 ```json
 {
+  "inputs": [
+    {
+      "type": "promptString",
+      "id": "video-url-analyzer-gemini-api-key",
+      "description": "Gemini API key for video-url-analyzer-mcp",
+      "password": true
+    }
+  ],
   "servers": {
     "video-url-analyzer": {
+      "type": "stdio",
       "command": "uvx",
-      "args": ["video-url-analyzer-mcp"]
+      "args": ["video-url-analyzer-mcp"],
+      "env": {
+        "GEMINI_API_KEY": "${input:video-url-analyzer-gemini-api-key}"
+      }
     }
   }
 }
@@ -101,34 +113,61 @@ that survives across workspaces.
 
 ---
 
-## Cursor / Windsurf / Antigravity / Generic MCP client
+## Cursor (`%USERPROFILE%\.cursor\mcp.json`)
 
 ```json
 {
   "mcpServers": {
     "video-url-analyzer": {
       "command": "uvx",
-      "args": ["video-url-analyzer-mcp"],
-      "env": {
-        "GEMINI_API_KEY": "set-in-environment-not-here"
-      }
+      "args": ["video-url-analyzer-mcp"]
     }
   }
 }
 ```
 
-Python-module alternative (after `pip install -e .` in this repo):
+## Windsurf (`%USERPROFILE%\.codeium\windsurf\mcp_config.json`)
 
 ```json
 {
   "mcpServers": {
     "video-url-analyzer": {
-      "command": "python",
-      "args": ["-m", "video_url_analyzer_mcp"]
+      "command": "uvx",
+      "args": ["video-url-analyzer-mcp"]
     }
   }
 }
 ```
+
+## Google Antigravity (`%USERPROFILE%\.gemini\antigravity\mcp_config.json`)
+
+```json
+{
+  "mcpServers": {
+    "video-url-analyzer": {
+      "command": "uvx",
+      "args": ["video-url-analyzer-mcp"]
+    }
+  }
+}
+```
+
+## Cline (`%USERPROFILE%\.cline\data\settings\cline_mcp_settings.json`)
+
+```json
+{
+  "mcpServers": {
+    "video-url-analyzer": {
+      "command": "uvx",
+      "args": ["video-url-analyzer-mcp"]
+    }
+  }
+}
+```
+
+If your client does not inherit `GEMINI_API_KEY` from your user environment,
+run `install.ps1` and paste the key into the hidden prompt; the installer will
+write the local-only `env` block for the clients you select.
 
 ---
 

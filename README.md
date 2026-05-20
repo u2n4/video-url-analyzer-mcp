@@ -113,7 +113,30 @@ The packaged runtime lives at `src/video_url_analyzer_mcp/server.py`; the
 console entry point is `video_url_analyzer_mcp:main`. Pick whichever
 install path matches your workflow.
 
-### Option A — `uvx` (no install)
+### Option A — one-line Windows installer (recommended for new users)
+
+```powershell
+irm https://raw.githubusercontent.com/u2n4/video-url-analyzer-mcp/main/install.ps1 | iex
+```
+
+The installer follows the current MCP client pattern: it installs/runs from
+PyPI with `uvx`, asks for `GEMINI_API_KEY` only through a hidden prompt, and
+lets the user choose where to register the server:
+
+- Claude Code
+- Claude Desktop
+- Codex CLI
+- Cursor
+- Windsurf
+- VS Code / GitHub Copilot
+- Google Antigravity
+- Cline
+
+Do not append your API key to the PowerShell command. If you skip the key,
+the installer still registers the server and you can set `GEMINI_API_KEY`
+later.
+
+### Option B — `uvx` (no install)
 
 ```powershell
 uvx video-url-analyzer-mcp
@@ -121,7 +144,7 @@ uvx video-url-analyzer-mcp
 
 Works on Windows / macOS / Linux as long as [uv](https://docs.astral.sh/uv/) is on PATH.
 
-### Option B — Windows wizard (recommended for new users)
+### Option C — Windows wizard from a checkout
 
 ```powershell
 git clone https://github.com/u2n4/video-url-analyzer-mcp.git
@@ -140,7 +163,7 @@ The wizard:
 - Runs an offline import smoke test.
 - Hands off to `scripts/configure_mcp_clients.ps1` for client setup.
 
-### Option C — Manual install (any OS)
+### Option D — Manual install (any OS)
 
 ```bash
 git clone https://github.com/u2n4/video-url-analyzer-mcp.git
@@ -213,18 +236,31 @@ Workspace registration writes `.vscode/mcp.json`:
 
 ```json
 {
+  "inputs": [
+    {
+      "type": "promptString",
+      "id": "video-url-analyzer-gemini-api-key",
+      "description": "Gemini API key for video-url-analyzer-mcp",
+      "password": true
+    }
+  ],
   "servers": {
     "video-url-analyzer": {
+      "type": "stdio",
       "command": "uvx",
-      "args": ["video-url-analyzer-mcp"]
+      "args": ["video-url-analyzer-mcp"],
+      "env": {
+        "GEMINI_API_KEY": "${input:video-url-analyzer-gemini-api-key}"
+      }
     }
   }
 }
 ```
 
 For all clients, restart the application after editing config so the new
-MCP server is picked up. Full snippets — including Cursor, Windsurf, and
-Antigravity — live in [`docs/mcp-config-examples.md`](docs/mcp-config-examples.md).
+MCP server is picked up. Full snippets — including Cursor, Windsurf,
+Antigravity (`%USERPROFILE%\.gemini\antigravity\mcp_config.json`), and
+Cline — live in [`docs/mcp-config-examples.md`](docs/mcp-config-examples.md).
 
 ---
 

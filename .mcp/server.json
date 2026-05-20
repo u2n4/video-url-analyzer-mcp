@@ -15,7 +15,16 @@
       "version": "1.5.2",
       "transport": {
         "type": "stdio"
-      }
+      },
+      "environmentVariables": [
+        {
+          "name": "GEMINI_API_KEY",
+          "description": "Google AI Studio Gemini API key used for video analysis",
+          "format": "string",
+          "isRequired": true,
+          "isSecret": true
+        }
+      ]
     }
   ]
 }
