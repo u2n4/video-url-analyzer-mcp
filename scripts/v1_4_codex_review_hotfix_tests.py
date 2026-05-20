@@ -288,9 +288,9 @@ def test_existing_cached_context_still_reused():
 
 def test_tool_count_unchanged():
     names = {tool.name for tool in asyncio.run(server.mcp.list_tools())}
-    if len(names) != 17:
-        _fail("tool_count_unchanged", f"expected 17 tools, got {len(names)}: {sorted(names)}")
-    _ok("tool_count_unchanged", "17 tools")
+    if len(names) != 18:
+        _fail("tool_count_unchanged", f"expected 18 tools, got {len(names)}: {sorted(names)}")
+    _ok("tool_count_unchanged", "18 tools")
 
 
 def test_import_without_gemini_api_key():

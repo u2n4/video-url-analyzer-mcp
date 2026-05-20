@@ -11,6 +11,10 @@ The package exposes the console script `video-url-analyzer-mcp` (entry
 point `video_url_analyzer_mcp:main`). The same module also runs via
 `python -m video_url_analyzer_mcp`.
 
+Use `video-analyzer` as the local MCP client entry name. The package name is
+still `video-url-analyzer-mcp`, and the registry name is
+`io.github.u2n4/video-url-analyzer-mcp`.
+
 ---
 
 ## Launch commands
@@ -28,7 +32,7 @@ point `video_url_analyzer_mcp:main`). The same module also runs via
 ```json
 {
   "mcpServers": {
-    "video-url-analyzer": {
+    "video-analyzer": {
       "command": "uvx",
       "args": ["video-url-analyzer-mcp"]
     }
@@ -41,7 +45,7 @@ If you must keep the key inside the config rather than the OS environment:
 ```json
 {
   "mcpServers": {
-    "video-url-analyzer": {
+    "video-analyzer": {
       "command": "uvx",
       "args": ["video-url-analyzer-mcp"],
       "env": {
@@ -60,10 +64,10 @@ Restart Claude Desktop after editing the file.
 
 ```bash
 # uvx (recommended)
-claude mcp add video-url-analyzer --transport stdio -- uvx video-url-analyzer-mcp
+claude mcp add video-analyzer --transport stdio -- uvx video-url-analyzer-mcp
 
 # Python module variant (after pip install -e . from the repo)
-claude mcp add video-url-analyzer --transport stdio -- python -m video_url_analyzer_mcp
+claude mcp add video-analyzer --transport stdio -- python -m video_url_analyzer_mcp
 ```
 
 Do not paste a real API key into a command you will share or screenshot. Use
@@ -74,7 +78,7 @@ the installer prompt, your user environment, or your client UI when available.
 ## Codex CLI (`~/.codex/config.toml`)
 
 ```toml
-[mcp_servers.video-url-analyzer]
+[mcp_servers.video-analyzer]
 command = "uvx"
 args = ["video-url-analyzer-mcp"]
 # Optional, only if you don't set the key in your shell environment:
@@ -96,7 +100,7 @@ args = ["video-url-analyzer-mcp"]
     }
   ],
   "servers": {
-    "video-url-analyzer": {
+    "video-analyzer": {
       "type": "stdio",
       "command": "uvx",
       "args": ["video-url-analyzer-mcp"],
@@ -118,7 +122,7 @@ that survives across workspaces.
 ```json
 {
   "mcpServers": {
-    "video-url-analyzer": {
+    "video-analyzer": {
       "command": "uvx",
       "args": ["video-url-analyzer-mcp"]
     }
@@ -131,7 +135,7 @@ that survives across workspaces.
 ```json
 {
   "mcpServers": {
-    "video-url-analyzer": {
+    "video-analyzer": {
       "command": "uvx",
       "args": ["video-url-analyzer-mcp"]
     }
@@ -144,7 +148,7 @@ that survives across workspaces.
 ```json
 {
   "mcpServers": {
-    "video-url-analyzer": {
+    "video-analyzer": {
       "command": "uvx",
       "args": ["video-url-analyzer-mcp"]
     }
@@ -157,7 +161,7 @@ that survives across workspaces.
 ```json
 {
   "mcpServers": {
-    "video-url-analyzer": {
+    "video-analyzer": {
       "command": "uvx",
       "args": ["video-url-analyzer-mcp"]
     }

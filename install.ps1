@@ -11,8 +11,9 @@
   What it does:
     1. Ensures `uv` (and `uvx`) is installed; installs it automatically via the
        official Astral installer if missing.
-    2. Optionally captures GEMINI_API_KEY with hidden input. Do not put API keys
-       in the one-line PowerShell command; that leaks into shell history.
+    2. Uses GEMINI_API_KEY from the current environment when present; otherwise
+       optionally captures it with hidden input. Do not put API keys in the
+       one-line PowerShell command; that leaks into shell history.
     3. Lets you pick which MCP client(s) to configure: Claude Code, Claude
        Desktop, Codex CLI, Cursor, Windsurf, VS Code, Antigravity, Cline -- or
        all of them.
@@ -435,14 +436,17 @@ Test-Package $uvxPath
 
 # API key (env > hidden prompt). Optional everywhere.
 $key = $env:GEMINI_API_KEY
+$keySource = $null
+if ($key) { $keySource = 'GEMINI_API_KEY environment variable' }
 if (-not $key -and $script:Interactive) {
   Write-Host ""
   Write-Info "Get a free key at https://aistudio.google.com/apikey (or press Enter to skip)."
   Write-Warn "Do not paste API keys into the one-line install command. This prompt hides input."
   $key = Read-Secret "Paste GEMINI_API_KEY (hidden, Enter to skip)"
+  if ($key) { $keySource = 'hidden prompt' }
 }
 if ($key) {
-  Write-Ok "Using API key: $(Get-MaskedKey $key)"
+  Write-Ok "Using API key from ${keySource}: $(Get-MaskedKey $key)"
 } else {
   Write-Warn "No API key provided. The server will install but you must set GEMINI_API_KEY before use."
 }

@@ -117,7 +117,7 @@ function Configure-ClaudeDesktop($launch, $envBlock) {
     } else { return }
   }
 
-  if (-not (Confirm-Yes "Write/update video-url-analyzer entry in Claude Desktop config?" $true)) { return }
+  if (-not (Confirm-Yes "Write/update video-analyzer entry in Claude Desktop config?" $true)) { return }
 
   Backup-File $configPath | Out-Null
 
@@ -132,10 +132,10 @@ function Configure-ClaudeDesktop($launch, $envBlock) {
   }
 
   $entry = New-McpEntry $launch $envBlock
-  if ($current.mcpServers.PSObject.Properties.Name -contains 'video-url-analyzer') {
-    $current.mcpServers.PSObject.Properties.Remove('video-url-analyzer')
+  if ($current.mcpServers.PSObject.Properties.Name -contains 'video-analyzer') {
+    $current.mcpServers.PSObject.Properties.Remove('video-analyzer')
   }
-  $current.mcpServers | Add-Member -NotePropertyName 'video-url-analyzer' -NotePropertyValue ([pscustomobject]$entry) -Force
+  $current.mcpServers | Add-Member -NotePropertyName 'video-analyzer' -NotePropertyValue ([pscustomobject]$entry) -Force
 
   $json = $current | ConvertTo-Json -Depth 10
   try { $null = $json | ConvertFrom-Json } catch { Write-Err "Generated JSON is invalid; refusing to write."; return }
@@ -156,7 +156,7 @@ function Configure-ClaudeCode($launch, $envBlock) {
   $argString = ($launch.args | ForEach-Object { '"' + $_ + '"' }) -join ' '
   Write-Info "Run this from any shell to register the MCP server with Claude Code:"
   Write-Host ""
-  Write-Host "  claude mcp add video-url-analyzer --transport stdio $envFlags -- $cmd $argString"
+  Write-Host "  claude mcp add video-analyzer --transport stdio $envFlags -- $cmd $argString"
   Write-Host ""
 }
 
@@ -174,7 +174,7 @@ function Configure-Codex($launch, $envBlock) {
     } else { return }
   }
 
-  if (-not (Confirm-Yes "Append/update [mcp_servers.video-url-analyzer] in Codex config?" $true)) { return }
+  if (-not (Confirm-Yes "Append/update [mcp_servers.video-analyzer] in Codex config?" $true)) { return }
 
   Backup-File $configPath | Out-Null
 
@@ -187,7 +187,7 @@ function Configure-Codex($launch, $envBlock) {
 
   $section = @"
 
-[mcp_servers.video-url-analyzer]
+[mcp_servers.video-analyzer]
 command = "$($launch.command -replace '\\','\\\\')"
 args = [$argsToml]
 $envToml
@@ -196,7 +196,7 @@ $envToml
   $existing = ''
   if (Test-Path $configPath) { $existing = Get-Content $configPath -Raw }
   # Strip any prior block to avoid duplicates (idempotent)
-  $stripped = [regex]::Replace($existing, '(?ms)^\s*\[mcp_servers\.video-url-analyzer\].*?(?=^\s*\[|\Z)', '').TrimEnd()
+  $stripped = [regex]::Replace($existing, '(?ms)^\s*\[mcp_servers\.video-analyzer\].*?(?=^\s*\[|\Z)', '').TrimEnd()
   $newContent = ($stripped + "`r`n" + $section).TrimStart("`r`n")
 
   Set-Content -Path $configPath -Value $newContent -Encoding UTF8
@@ -215,7 +215,7 @@ function Configure-VSCode($launch, $envBlock) {
   $entry = New-McpEntry $launch $envBlock
   $config = [ordered]@{
     servers = [ordered]@{
-      'video-url-analyzer' = $entry
+      'video-analyzer' = $entry
     }
   }
   $json = ($config | ConvertTo-Json -Depth 10)
@@ -232,7 +232,7 @@ function Configure-VSCode($launch, $envBlock) {
       try {
         $existing = Get-Content $configPath -Raw | ConvertFrom-Json -ErrorAction Stop
         if ($existing.PSObject.Properties.Name -contains 'servers') {
-          $existing.servers | Add-Member -NotePropertyName 'video-url-analyzer' -NotePropertyValue ([pscustomobject]$entry) -Force
+          $existing.servers | Add-Member -NotePropertyName 'video-analyzer' -NotePropertyValue ([pscustomobject]$entry) -Force
           $json = $existing | ConvertTo-Json -Depth 10
         }
       } catch { Write-Warn "Could not parse existing $configPath; replacing with a fresh config." }
@@ -254,7 +254,7 @@ function Configure-VSCode($launch, $envBlock) {
 # ---------------------------------------------------------------------------
 function Show-GenericSnippets($launch, $envBlock) {
   $entry = New-McpEntry $launch $envBlock
-  $generic = [ordered]@{ mcpServers = [ordered]@{ 'video-url-analyzer' = $entry } }
+  $generic = [ordered]@{ mcpServers = [ordered]@{ 'video-analyzer' = $entry } }
   Write-Info "Generic stdio JSON snippet:"
   Write-Host ""
   Write-Host (($generic | ConvertTo-Json -Depth 10))
@@ -262,7 +262,7 @@ function Show-GenericSnippets($launch, $envBlock) {
   Write-Info "Python module alternative:"
   $alt = @{ command = 'python'; args = @('-m', 'video_url_analyzer_mcp') }
   $altEntry = New-McpEntry $alt $envBlock
-  $altCfg = [ordered]@{ mcpServers = [ordered]@{ 'video-url-analyzer' = $altEntry } }
+  $altCfg = [ordered]@{ mcpServers = [ordered]@{ 'video-analyzer' = $altEntry } }
   Write-Host (($altCfg | ConvertTo-Json -Depth 10))
 }
 
