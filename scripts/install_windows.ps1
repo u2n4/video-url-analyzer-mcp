@@ -206,7 +206,7 @@ Write-Ok ("Smoke test: " + $smoke)
 
 $toolCount = & $python.Source -c "import asyncio; from video_url_analyzer_mcp import server; n = len({t.name for t in asyncio.run(server.mcp.list_tools())}); print(n)"
 if ($LASTEXITCODE -eq 0) {
-  Write-Ok "MCP tool count: $toolCount (expected 17)"
+  Write-Ok "MCP tool count: $toolCount (expected 18)"
 } else {
   Write-Warn "Could not enumerate tools; this is non-fatal."
 }

@@ -337,8 +337,8 @@ def test_retry_import_and_tool_count(results):
     results.append(("import_without_key", "PASS", "server imports"))
 
     names = {tool.name for tool in asyncio.run(server.mcp.list_tools())}
-    assert len(names) == 17, sorted(names)
-    results.append(("tool_count", "PASS", "17 tools"))
+    assert len(names) == 18, sorted(names)
+    results.append(("tool_count", "PASS", "18 tools"))
 
     calls = {"count": 0}
 

@@ -35,7 +35,7 @@
   <img src="assets/features.png" alt="Features — Analyze, Transcript, Ask" width="80%">
 </p>
 
-v1.4 exposes **17 MCP tools**:
+v1.5.2 exposes **18 MCP tools**:
 
 | Tool | What it does |
 |------|-------------|
@@ -120,8 +120,9 @@ irm https://raw.githubusercontent.com/u2n4/video-url-analyzer-mcp/main/install.p
 ```
 
 The installer follows the current MCP client pattern: it installs/runs from
-PyPI with `uvx`, asks for `GEMINI_API_KEY` only through a hidden prompt, and
-lets the user choose where to register the server:
+PyPI with `uvx`, uses an existing `GEMINI_API_KEY` environment variable when
+one is already set, otherwise asks for the key only through a hidden prompt,
+and lets the user choose where to register the server:
 
 - Claude Code
 - Claude Desktop
@@ -134,7 +135,9 @@ lets the user choose where to register the server:
 
 Do not append your API key to the PowerShell command. If you skip the key,
 the installer still registers the server and you can set `GEMINI_API_KEY`
-later.
+later. If `GEMINI_API_KEY` is already set in your User environment, the
+installer will use it directly and print only a masked form like
+`AIza...abcd`.
 
 ### Option B — `uvx` (no install)
 
@@ -194,12 +197,16 @@ the snippets below from `docs/mcp-config-examples.md`. The wizard backs up
 existing client config, validates JSON/TOML, and never overwrites unrelated
 MCP servers.
 
+Client configs use `video-analyzer` as the local MCP server entry name. The
+published package remains `video-url-analyzer-mcp`, and the registry name
+remains `io.github.u2n4/video-url-analyzer-mcp`.
+
 ### Claude Desktop (`%APPDATA%\Claude\claude_desktop_config.json`)
 
 ```json
 {
   "mcpServers": {
-    "video-url-analyzer": {
+    "video-analyzer": {
       "command": "uvx",
       "args": ["video-url-analyzer-mcp"]
     }
@@ -213,19 +220,19 @@ embed it, add `"env": { "GEMINI_API_KEY": "YOUR_KEY_HERE" }`.
 ### Claude Code (CLI)
 
 ```bash
-claude mcp add video-url-analyzer --transport stdio -- uvx video-url-analyzer-mcp
+claude mcp add video-analyzer --transport stdio -- uvx video-url-analyzer-mcp
 ```
 
 Or, after `pip install -e .` in the repo:
 
 ```bash
-claude mcp add video-url-analyzer --transport stdio -- python -m video_url_analyzer_mcp
+claude mcp add video-analyzer --transport stdio -- python -m video_url_analyzer_mcp
 ```
 
 ### Codex CLI (`~/.codex/config.toml`)
 
 ```toml
-[mcp_servers.video-url-analyzer]
+[mcp_servers.video-analyzer]
 command = "uvx"
 args = ["video-url-analyzer-mcp"]
 ```
@@ -245,7 +252,7 @@ Workspace registration writes `.vscode/mcp.json`:
     }
   ],
   "servers": {
-    "video-url-analyzer": {
+    "video-analyzer": {
       "type": "stdio",
       "command": "uvx",
       "args": ["video-url-analyzer-mcp"],
