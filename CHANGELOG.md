@@ -6,6 +6,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- Reused bounded parallel Gemini Files uploads in structured non-YouTube analysis paths (`find_video_moments`, `analyze_video_segment`, and `prepare_video_context`) so multi-file media keeps the v1.5.4 speedup outside the basic analysis tool too.
+
 ## [1.5.4] - 2026-05-21
 
 ### Changed
