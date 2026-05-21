@@ -205,6 +205,66 @@ def test_analyze_downloaded_uploads_multiple_files_in_original_order(monkeypatch
     assert uploaded_names == ["files/video_2", "files/video_1", "files/video_3"]
 
 
+def test_find_video_moments_uploads_multiple_files_in_original_order(monkeypatch, tmp_path):
+    videos = []
+    for index in (2, 1, 3):
+        video = tmp_path / f"video_{index}.mp4"
+        video.write_bytes(b"video bytes" * 200)
+        videos.append(video)
+
+    monkeypatch.setenv("VIDEO_GEMINI_UPLOAD_CONCURRENCY", "3")
+    monkeypatch.setattr(server, "_download_video", lambda url: [str(video) for video in videos])
+    monkeypatch.setattr(server, "_get_client", lambda: FakeClient())
+    monkeypatch.setattr(
+        server,
+        "_upload_to_gemini",
+        lambda path: SimpleNamespace(name=f"files/{Path(path).stem}"),
+    )
+
+    captured = {}
+
+    def fake_generate_content(**kwargs):
+        captured["contents"] = kwargs["contents"]
+        return SimpleNamespace(text="""{
+  "query": "cat",
+  "analyzed_by": "gemini",
+  "model_used": "model",
+  "detail": "compact",
+  "moments": [
+    {
+      "start": "00:01",
+      "end": "00:02",
+      "confidence": 0.9,
+      "reason": "cat appears",
+      "audio_evidence": [],
+      "visual_evidence": ["cat appears"]
+    }
+  ],
+  "warnings": [],
+  "limitations": []
+}""")
+
+    monkeypatch.setattr(server, "_generate_content_with_retry", fake_generate_content)
+
+    result = server.do_find_video_moments(
+        "https://www.instagram.com/reel/example/",
+        "cat",
+        max_results=3,
+        context_seconds=10,
+        detail="compact",
+        model="model",
+        return_full_text=False,
+    )
+
+    assert '"status": "error"' not in result
+    uploaded_names = [
+        item.name
+        for item in captured["contents"][:-1]
+        if hasattr(item, "name")
+    ]
+    assert uploaded_names == ["files/video_2", "files/video_1", "files/video_3"]
+
+
 def test_prepare_slideshow_assets_returns_ordered_image_blocks(monkeypatch, tmp_path):
     image_paths = []
     for index in range(1, 3):

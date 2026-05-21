@@ -19,7 +19,7 @@ os.environ["ANALYSES_DIR"] = str(TEST_ROOT / "analyses")
 
 sys.path.insert(0, str(ROOT / "src"))
 
-from video_url_analyzer_mcp import server
+from video_url_analyzer_mcp import server  # noqa: E402
 
 
 TIKTOK_URL = (

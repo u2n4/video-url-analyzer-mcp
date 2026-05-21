@@ -3624,8 +3624,7 @@ def do_find_video_moments(
             uploaded_files: list = []
             try:
                 file_paths = _download_video(url)
-                for path in file_paths:
-                    uploaded_files.append(_upload_to_gemini(path))
+                uploaded_files = _upload_files_to_gemini_ordered(file_paths)
                 response = _generate_content_with_retry(
                     model=chosen_model,
                     contents=list(uploaded_files) + [prompt],
@@ -3753,8 +3752,7 @@ def do_analyze_video_segment(
             uploaded_files: list = []
             try:
                 file_paths = _download_video(url)
-                for path in file_paths:
-                    uploaded_files.append(_upload_to_gemini(path))
+                uploaded_files = _upload_files_to_gemini_ordered(file_paths)
                 if not uploaded_files:
                     raise RuntimeError("No uploaded media file is available.")
 
@@ -3905,9 +3903,7 @@ def do_prepare_video_context(
             uploaded_files: list = []
             try:
                 file_paths = _download_video(url)
-                for path in file_paths:
-                    uploaded_files.append(_upload_to_gemini(path))
-                    gemini_called = True
+                uploaded_files = _upload_files_to_gemini_ordered(file_paths)
                 gemini_called = True
                 response = _generate_content_with_retry(
                     model=chosen_model,
