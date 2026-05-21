@@ -18,6 +18,7 @@ import tempfile
 import threading
 import time
 import uuid
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from pathlib import Path
 from urllib.parse import urlparse, parse_qs
@@ -33,6 +34,10 @@ from google.genai import errors, types
 from platformdirs import user_data_dir
 from pydantic import BaseModel, Field
 from typing import Any, Literal, Optional, cast
+import yt_dlp
+from yt_dlp.networking.impersonate import ImpersonateTarget
+from yt_dlp.utils import DownloadError as YtDlpDownloadError
+from yt_dlp.utils import YoutubeDLError as YtDlpError
 
 from .slideshow import (
     SlideshowError,
@@ -805,6 +810,10 @@ def _safe_yt_dlp_sort_for_url(url: str) -> Optional[str]:
     return "+codec:avc:m4a,res,ext:mp4:m4a"
 
 
+def _yt_dlp_format_sort(sort: str) -> list[str]:
+    return [item.strip() for item in sort.split(",") if item.strip()]
+
+
 def _normalize_youtube_url(url: str) -> str:
     """Normalize YouTube URL to standard format."""
     parsed = urlparse(url)
@@ -1377,29 +1386,19 @@ def _download_video(url: str) -> list[str]:
                 _remove_paths(scrape_paths)
         logger.info("Instagram scrape failed, falling back to yt-dlp...")
 
-    # --- yt-dlp path ---
-    ytdlp_cmd = [sys.executable, "-m", "yt_dlp"]
-
-    base_args = [
-        "--no-playlist",
-        "--force-overwrites",
-        "-o", output_template,
-    ]
-
     safe_selector = _safe_yt_dlp_format_selector_for_url(url)
     safe_sort = _safe_yt_dlp_sort_for_url(url)
+    merge_output_format = None
     if safe_selector:
         fmt_selector = safe_selector
-        base_args.append("--merge-output-format")
-        base_args.append("mp4")
+        merge_output_format = "mp4"
     elif platform == "instagram":
         fmt_selector = (
             "best[filesize<100M]/"
             "bestvideo[filesize<100M]+bestaudio/bestvideo+bestaudio/"
             "best"
         )
-        base_args.append("--merge-output-format")
-        base_args.append("mp4")
+        merge_output_format = "mp4"
     else:
         fmt_selector = (
             "best[vcodec^=h264][filesize<100M]/"
@@ -1414,79 +1413,80 @@ def _download_video(url: str) -> list[str]:
     )
 
     if platform in ("tiktok", "instagram"):
+        chrome_impersonation = ImpersonateTarget.from_str("chrome")
         strategies = [
-            ("impersonate only", ["--impersonate", "chrome"]),
+            ("impersonate only", {"impersonate": chrome_impersonation}),
         ]
         if ENABLE_BROWSER_COOKIES:
             strategies.append(
-                ("cookies+impersonate", [
-                    "--cookies-from-browser", "chrome",
-                    "--impersonate", "chrome",
-                ]),
+                ("cookies+impersonate", {
+                    "cookiesfrombrowser": ("chrome",),
+                    "impersonate": chrome_impersonation,
+                }),
             )
-        strategies.append(("plain", []))
+        strategies.append(("plain", {}))
     else:
-        strategies = [("plain", [])]
+        strategies = [("plain", {})]
 
     last_error = ""
-    success = False
 
-    for strategy_name, extra_args in strategies:
-        cmd = ytdlp_cmd + ["-f", fmt_selector]
+    for strategy_name, extra_opts in strategies:
+        ydl_opts: dict[str, Any] = {
+            "format": fmt_selector,
+            "noplaylist": True,
+            "overwrites": True,
+            "outtmpl": output_template,
+            "quiet": True,
+            "no_warnings": True,
+            "socket_timeout": ytdlp_timeout,
+        }
         if safe_sort:
-            cmd.extend(["-S", safe_sort])
-        cmd.extend(extra_args + base_args + [url])
+            ydl_opts["format_sort"] = _yt_dlp_format_sort(safe_sort)
+        if merge_output_format:
+            ydl_opts["merge_output_format"] = merge_output_format
+        ydl_opts.update(extra_opts)
 
         logger.info("yt-dlp strategy '%s' (timeout=%ds)", strategy_name, ytdlp_timeout)
         try:
-            result = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                timeout=ytdlp_timeout,
-            )
-            if result.returncode == 0:
-                success = True
-                break
-            last_error = result.stderr
+            with yt_dlp.YoutubeDL(cast(Any, ydl_opts)) as ydl:
+                ydl.download([url])
+        except (YtDlpDownloadError, YtDlpError) as exc:
+            last_error = str(exc)
             logger.warning(
                 "yt-dlp [%s] failed: %s",
                 strategy_name, last_error[-300:],
             )
-        except subprocess.TimeoutExpired:
-            last_error = f"Timed out [{strategy_name}] after {ytdlp_timeout}s"
-            logger.warning(last_error)
+            continue
 
-    if not success:
-        if platform == "tiktok":
-            raise VideoAnalyzerError(
-                "No compatible TikTok MP4/H.264/H.265 format could be selected. "
-                "The video may only expose an unsupported ByteDance bvc2/bytevc2 stream.",
-                code="no_compatible_format",
-                details={
-                    "selector": fmt_selector,
-                    "sort": safe_sort,
-                    "stderr_tail": _short_tail(last_error),
-                },
-                platform=platform,
-            )
-        raise RuntimeError(
-            f"Could not download video after all strategies. "
-            f"Is the URL public and accessible?\n"
-            f"Last error: {last_error[-500:]}"
+        for fname in os.listdir(tmp_dir):
+            fpath = os.path.join(tmp_dir, fname)
+            if os.path.isfile(fpath):
+                size_mb = os.path.getsize(fpath) / 1e6
+                logger.info("Downloaded video to %s (%.1f MB)", fpath, size_mb)
+                checked = _check_download_size(fpath)
+                _validate_media_file_for_processing(checked, url)
+                return [checked]
+
+        last_error = f"yt-dlp [{strategy_name}] completed but no file was found."
+        logger.warning(last_error)
+
+    if platform == "tiktok":
+        raise VideoAnalyzerError(
+            "No compatible TikTok MP4/H.264/H.265 format could be selected. "
+            "The video may only expose an unsupported ByteDance bvc2/bytevc2 stream.",
+            code="no_compatible_format",
+            details={
+                "selector": fmt_selector,
+                "sort": safe_sort,
+                "stderr_tail": _short_tail(last_error),
+            },
+            platform=platform,
         )
-
-    # Find the downloaded file
-    for fname in os.listdir(tmp_dir):
-        fpath = os.path.join(tmp_dir, fname)
-        if os.path.isfile(fpath):
-            size_mb = os.path.getsize(fpath) / 1e6
-            logger.info("Downloaded video to %s (%.1f MB)", fpath, size_mb)
-            checked = _check_download_size(fpath)
-            _validate_media_file_for_processing(checked, url)
-            return [checked]
-
-    raise RuntimeError("Download completed but no file was found.")
+    raise RuntimeError(
+        f"Could not download video after all strategies. "
+        f"Is the URL public and accessible?\n"
+        f"Last error: {last_error[-500:]}"
+    )
 
 
 def _upload_to_gemini(file_path: str):
@@ -1530,6 +1530,45 @@ def _upload_to_gemini(file_path: str):
 
     logger.info("File ready: %s", uploaded.name)
     return uploaded
+
+
+def _upload_files_to_gemini_ordered(file_paths: list[str]) -> list[Any]:
+    worker_count = max(
+        1,
+        min(len(file_paths), _env_int("VIDEO_GEMINI_UPLOAD_CONCURRENCY", 4), 16),
+    )
+    if worker_count == 1:
+        return [_upload_to_gemini(path) for path in file_paths]
+
+    logger.info(
+        "Uploading %d file(s) to Gemini with %d worker(s)...",
+        len(file_paths),
+        worker_count,
+    )
+    uploaded_files: list[Any] = []
+    ordered_files: list[Any | None] = [None] * len(file_paths)
+    first_error: Exception | None = None
+    with ThreadPoolExecutor(max_workers=worker_count, thread_name_prefix="gemini-upload") as executor:
+        futures = {
+            executor.submit(_upload_to_gemini, path): index
+            for index, path in enumerate(file_paths)
+        }
+        for future in as_completed(futures):
+            index = futures[future]
+            try:
+                uploaded = future.result()
+            except Exception as exc:
+                if first_error is None:
+                    first_error = exc
+                continue
+            ordered_files[index] = uploaded
+            uploaded_files.append(uploaded)
+
+    if first_error is not None:
+        _cleanup(uploaded_file=uploaded_files)
+        raise first_error
+
+    return [cast(Any, uploaded) for uploaded in ordered_files]
 
 
 def _cleanup(file_path=None, uploaded_file=None):
@@ -3394,8 +3433,7 @@ def _analyze_downloaded(url: str, prompt: str, model: str) -> str:
         else:
             image_prompt = prompt
 
-        for p in file_paths:
-            uploaded_files.append(_upload_to_gemini(p))
+        uploaded_files = _upload_files_to_gemini_ordered(file_paths)
 
         logger.info("Analyzing uploaded media (%d file(s), model: %s)...",
                     len(uploaded_files), model)

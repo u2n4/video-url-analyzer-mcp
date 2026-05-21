@@ -11,6 +11,7 @@ import shutil
 import tempfile
 import time
 from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any, Literal, cast
 from urllib.parse import urlparse
@@ -79,6 +80,27 @@ USER_AGENT = (
 
 class SlideshowError(RuntimeError):
     """Raised when slideshow detection or processing fails."""
+
+
+def _env_int(name: str, default: int, minimum: int = 1, maximum: int = 16) -> int:
+    raw = os.environ.get(name, "").strip()
+    if not raw:
+        return default
+    try:
+        value = int(raw)
+    except ValueError:
+        logger.warning("%s must be an integer; using default %s", name, default)
+        return default
+    if value < minimum:
+        logger.warning("%s must be >= %s; using default %s", name, minimum, default)
+        return default
+    return min(value, maximum)
+
+
+def _bounded_worker_count(name: str, default: int, item_count: int) -> int:
+    if item_count <= 1:
+        return 1
+    return max(1, min(item_count, _env_int(name, default)))
 
 
 def _looks_like_youtube_community(url: str) -> bool:
@@ -380,11 +402,23 @@ def _download_audio_atomic(url: str, final_path: Path, timeout: int = 120) -> Pa
 
 
 def _download_images(urls: list[str], output_dir: Path, prefix: str) -> list[Path]:
-    paths: list[Path] = []
-    for index, image_url in enumerate(urls, start=1):
-        path = _download_image_atomic(image_url, output_dir / f"{prefix}_{index:02d}.jpg")
-        paths.append(path)
-    return paths
+    worker_count = _bounded_worker_count("VIDEO_IMAGE_DOWNLOAD_CONCURRENCY", 6, len(urls))
+
+    def download_one(item: tuple[int, str]) -> Path:
+        index, image_url = item
+        return _download_image_atomic(image_url, output_dir / f"{prefix}_{index:02d}.jpg")
+
+    items = list(enumerate(urls, start=1))
+    if worker_count == 1:
+        return [download_one(item) for item in items]
+
+    logger.info(
+        "Slideshow download: downloading %d image(s) with %d worker(s)",
+        len(urls),
+        worker_count,
+    )
+    with ThreadPoolExecutor(max_workers=worker_count, thread_name_prefix="slide-download") as executor:
+        return list(executor.map(download_one, items))
 
 
 def _pick_audio_format(info: dict[str, Any]) -> dict[str, Any] | None:
@@ -823,6 +857,46 @@ def _cleanup_local(slideshow: dict[str, Any]) -> None:
             pass
 
 
+def _upload_images_ordered(
+    upload: Callable[[str], Any],
+    images: list[Path],
+    uploaded_files: list[Any],
+) -> list[Any]:
+    worker_count = _bounded_worker_count("VIDEO_GEMINI_UPLOAD_CONCURRENCY", 4, len(images))
+    if worker_count == 1:
+        image_files = [upload(str(image_path)) for image_path in images]
+        uploaded_files.extend(image_files)
+        return image_files
+
+    logger.info(
+        "Slideshow upload: uploading %d image(s) with %d worker(s)",
+        len(images),
+        worker_count,
+    )
+    image_files: list[Any | None] = [None] * len(images)
+    first_error: Exception | None = None
+    with ThreadPoolExecutor(max_workers=worker_count, thread_name_prefix="gemini-upload") as executor:
+        futures = {
+            executor.submit(upload, str(image_path)): index
+            for index, image_path in enumerate(images)
+        }
+        for future in as_completed(futures):
+            index = futures[future]
+            try:
+                uploaded = future.result()
+            except Exception as exc:
+                if first_error is None:
+                    first_error = exc
+                continue
+            image_files[index] = uploaded
+            uploaded_files.append(uploaded)
+
+    if first_error is not None:
+        raise first_error
+
+    return [cast(Any, image_file) for image_file in image_files]
+
+
 def analyze_slideshow(
     client: Any,
     model: str,
@@ -845,10 +919,7 @@ def analyze_slideshow(
     try:
         logger.info("Slideshow upload: uploading %d image(s)", len(images))
         upload = upload_file or (lambda file_path: _default_upload_file(client, file_path))
-        image_files: list[Any] = []
-        for image_path in images:
-            image_files.append(upload(str(image_path)))
-        uploaded_files.extend(image_files)
+        image_files = _upload_images_ordered(upload, images, uploaded_files)
         audio_file = None
         if audio:
             logger.info("Slideshow upload: uploading audio track")

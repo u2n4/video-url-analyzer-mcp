@@ -35,7 +35,7 @@
   <img src="assets/features.png" alt="Features — Analyze, Transcript, Ask" width="80%">
 </p>
 
-v1.5.2 exposes **18 MCP tools**:
+v1.5.4 exposes **18 MCP tools**:
 
 | Tool | What it does |
 |------|-------------|
@@ -317,7 +317,7 @@ This server has been hardened against a comprehensive threat model audit:
 | **Download Size** | Hard limit of 100 MB per video. |
 | **DoS Protection** | Max 10 concurrent background jobs. Auto-expiry after 1 hour. Storage cap of 200 analyses. |
 | **Schema Validation** | Gemini JSON responses validated before execution. Response size capped at 500K chars. |
-| **Dependencies** | All versions pinned in `requirements.txt`. |
+| **Dependencies** | Runtime dependency bounds are maintained in `pyproject.toml`. |
 
 ---
 
@@ -334,6 +334,8 @@ This server has been hardened against a comprehensive threat model audit:
 | `VIDEO_DOWNLOAD_TIMEOUT` | Override download and yt-dlp timeout values, in seconds | Existing per-operation defaults |
 | `VIDEO_FFMPEG_TIMEOUT` | Override ffmpeg extraction timeout values, in seconds | Existing per-operation defaults |
 | `VIDEO_GEMINI_TIMEOUT` | Optional Gemini HTTP timeout, in seconds | SDK default |
+| `VIDEO_IMAGE_DOWNLOAD_CONCURRENCY` | Parallel image downloads for TikTok/Instagram/YouTube photo posts | `6` |
+| `VIDEO_GEMINI_UPLOAD_CONCURRENCY` | Parallel Gemini Files uploads for slideshow images | `4` |
 | `VIDEO_ANALYZER_MODEL` | Single-knob default model id used for both fast and deep model resolution. Per-call `model=` and `GEMINI_FAST_MODEL` / `GEMINI_DEEP_MODEL` still take precedence. | _unset_ |
 | `GEMINI_FAST_MODEL` | Override for compact/standard detail mode | `gemini-3.5-flash` |
 | `GEMINI_DEEP_MODEL` | Override for `full` detail mode | `gemini-3.1-pro-preview` |
@@ -371,10 +373,10 @@ This server has been hardened against a comprehensive threat model audit:
 | Technology | Version | Purpose |
 |-----------|---------|---------|
 | [Google Gemini 3.5 Flash](https://ai.google.dev/gemini-api) | Latest | Multimodal video analysis engine |
-| [FastMCP](https://github.com/jlowin/fastmcp) | 3.1.0 | MCP protocol framework |
-| [yt-dlp](https://github.com/yt-dlp/yt-dlp) | 2026.3.3 | Video downloader |
-| [curl_cffi](https://github.com/lexiforest/curl_cffi) | 0.14.0 | Browser impersonation (TLS fingerprint) |
-| [google-genai](https://pypi.org/project/google-genai/) | 1.66.0 | Official Google GenAI SDK |
+| [FastMCP](https://github.com/jlowin/fastmcp) | 3.3.1+ | MCP protocol framework |
+| [yt-dlp](https://github.com/yt-dlp/yt-dlp) | 2026.3.17+ | Video downloader |
+| [curl_cffi](https://github.com/lexiforest/curl_cffi) | >=0.7.4,<0.15.0 | Browser impersonation (TLS fingerprint), pinned for yt-dlp 2026.03.17 compatibility |
+| [google-genai](https://pypi.org/project/google-genai/) | 2.5.0+ | Official Google GenAI SDK |
 
 ---
 
