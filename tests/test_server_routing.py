@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from pathlib import Path
 from types import SimpleNamespace
 
 from video_url_analyzer_mcp import server
@@ -33,6 +34,82 @@ def test_analysis_config_uses_thinking_budget_for_gemini_25():
     assert config.thinking_config is not None
     assert config.thinking_config.thinking_level is None
     assert config.thinking_config.thinking_budget == -1
+
+
+def test_download_video_uses_ytdlp_python_api(monkeypatch, tmp_path):
+    temp_dir = tmp_path / "download"
+    temp_dir.mkdir()
+    seen_opts = []
+    seen_urls = []
+
+    class FakeYoutubeDL:
+        def __init__(self, opts):
+            seen_opts.append(opts)
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def download(self, urls):
+            seen_urls.append(urls)
+            output = Path(seen_opts[-1]["outtmpl"].replace("%(ext)s", "mp4"))
+            output.write_bytes(b"video bytes" * 200)
+
+    monkeypatch.setattr(server.tempfile, "mkdtemp", lambda prefix: str(temp_dir))
+    monkeypatch.setattr(server.yt_dlp, "YoutubeDL", FakeYoutubeDL)
+    monkeypatch.setattr(
+        server.subprocess,
+        "run",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("subprocess should not run")),
+    )
+    monkeypatch.setattr(server, "_check_download_size", lambda path: path)
+    monkeypatch.setattr(server, "_validate_media_file_for_processing", lambda path, url=None: {})
+
+    result = server._download_video("https://www.youtube.com/watch?v=abc123")
+
+    assert result == [str(temp_dir / "video.mp4")]
+    assert seen_urls == [["https://www.youtube.com/watch?v=abc123"]]
+    assert seen_opts[0]["noplaylist"] is True
+    assert seen_opts[0]["overwrites"] is True
+    assert seen_opts[0]["quiet"] is True
+    assert seen_opts[0]["no_warnings"] is True
+
+
+def test_download_video_falls_back_when_impersonate_unavailable(monkeypatch, tmp_path):
+    temp_dir = tmp_path / "download"
+    temp_dir.mkdir()
+    attempts = []
+
+    class FakeYoutubeDL:
+        def __init__(self, opts):
+            attempts.append(opts)
+            if opts.get("impersonate"):
+                raise server.YtDlpError("impersonate target unavailable")
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def download(self, urls):
+            output = Path(attempts[-1]["outtmpl"].replace("%(ext)s", "mp4"))
+            output.write_bytes(b"video bytes" * 200)
+
+    monkeypatch.setattr(server.tempfile, "mkdtemp", lambda prefix: str(temp_dir))
+    monkeypatch.setattr(server, "_download_tiktok_api", lambda url, tmp_dir: None)
+    monkeypatch.setattr(server.yt_dlp, "YoutubeDL", FakeYoutubeDL)
+    monkeypatch.setattr(server, "_check_download_size", lambda path: path)
+    monkeypatch.setattr(server, "_validate_media_file_for_processing", lambda path, url=None: {})
+
+    result = server._download_video("https://www.tiktok.com/@user/video/123")
+
+    assert result == [str(temp_dir / "video.mp4")]
+    assert str(attempts[0]["impersonate"]) == "chrome"
+    assert attempts[0]["format_sort"] == ["+codec:avc:m4a", "res", "ext:mp4:m4a"]
+    assert "impersonate" not in attempts[-1]
 
 
 def test_analyze_downloaded_routes_slideshow_branch(monkeypatch):
@@ -94,6 +171,38 @@ def test_analyze_downloaded_routes_video_branch(monkeypatch, tmp_path):
 
     assert result == "video result"
     assert calls == ["video", f"upload:{video}", "generate"]
+
+
+def test_analyze_downloaded_uploads_multiple_files_in_original_order(monkeypatch, tmp_path):
+    videos = []
+    for index in (2, 1, 3):
+        video = tmp_path / f"video_{index}.mp4"
+        video.write_bytes(b"video bytes" * 200)
+        videos.append(video)
+
+    monkeypatch.setenv("VIDEO_GEMINI_UPLOAD_CONCURRENCY", "3")
+    monkeypatch.setattr(server, "_detect_post_type_for_routing", lambda url: "video")
+    monkeypatch.setattr(server, "_download_video", lambda url: [str(video) for video in videos])
+    monkeypatch.setattr(server, "_get_client", lambda: FakeClient())
+    monkeypatch.setattr(
+        server,
+        "_upload_to_gemini",
+        lambda path: SimpleNamespace(name=f"files/{Path(path).stem}"),
+    )
+
+    captured = {}
+
+    def fake_generate_content(**kwargs):
+        captured["contents"] = kwargs["contents"]
+        return SimpleNamespace(text="multi video result")
+
+    monkeypatch.setattr(server, "_generate_content_with_retry", fake_generate_content)
+
+    result = server._analyze_downloaded("https://www.instagram.com/reel/example/", "prompt", "model")
+
+    assert result == "multi video result"
+    uploaded_names = [item.name for item in captured["contents"][:-1]]
+    assert uploaded_names == ["files/video_2", "files/video_1", "files/video_3"]
 
 
 def test_prepare_slideshow_assets_returns_ordered_image_blocks(monkeypatch, tmp_path):
@@ -163,3 +272,70 @@ def test_analyze_slideshow_labels_images_before_gemini(monkeypatch, tmp_path):
     assert captured["contents"][1] == "Image 1 of 2. Analyze this image before moving to the next one."
     assert captured["contents"][3] == "Image 2 of 2. Analyze this image before moving to the next one."
     assert captured["contents"][-1] == "prompt"
+
+
+def test_analyze_slideshow_uploads_images_concurrently_in_original_order(monkeypatch, tmp_path):
+    from video_url_analyzer_mcp import slideshow
+
+    image_paths = []
+    for index in range(1, 5):
+        image = tmp_path / f"slide_{index}.jpg"
+        image.write_bytes(b"\xff\xd8" + bytes([index]) * 2048)
+        image_paths.append(image)
+
+    monkeypatch.setenv("VIDEO_GEMINI_UPLOAD_CONCURRENCY", "4")
+    captured = {}
+
+    def fake_upload(path: str):
+        return SimpleNamespace(name=f"files/{Path(path).stem}")
+
+    def fake_generate_content(**kwargs):
+        captured["contents"] = kwargs["contents"]
+        return SimpleNamespace(text="ok")
+
+    result = slideshow.analyze_slideshow(
+        FakeClient(),
+        "model",
+        {
+            "images": image_paths,
+            "audio": None,
+            "metadata": {"platform": "instagram", "caption": None},
+        },
+        "prompt",
+        None,
+        upload_file=fake_upload,
+        generate_content=fake_generate_content,
+    )
+
+    assert result == "ok"
+    uploaded_names = [
+        item.name
+        for item in captured["contents"]
+        if hasattr(item, "name")
+    ]
+    assert uploaded_names == ["files/slide_1", "files/slide_2", "files/slide_3", "files/slide_4"]
+
+
+def test_download_images_keeps_order_with_parallel_workers(monkeypatch, tmp_path):
+    from video_url_analyzer_mcp import slideshow
+
+    monkeypatch.setenv("VIDEO_IMAGE_DOWNLOAD_CONCURRENCY", "3")
+
+    def fake_download(url: str, final_path: Path, timeout: int = 60):
+        final_path.write_text(url, encoding="utf-8")
+        return final_path
+
+    monkeypatch.setattr(slideshow, "_download_image_atomic", fake_download)
+
+    paths = slideshow._download_images(
+        ["https://example.com/3.jpg", "https://example.com/1.jpg", "https://example.com/2.jpg"],
+        tmp_path,
+        "slide",
+    )
+
+    assert [path.name for path in paths] == ["slide_01.jpg", "slide_02.jpg", "slide_03.jpg"]
+    assert [path.read_text(encoding="utf-8") for path in paths] == [
+        "https://example.com/3.jpg",
+        "https://example.com/1.jpg",
+        "https://example.com/2.jpg",
+    ]

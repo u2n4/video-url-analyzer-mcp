@@ -6,6 +6,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.5.4] - 2026-05-21
+
+### Changed
+- Replaced the Windows-heavy `python -m yt_dlp` subprocess path with the in-process `yt_dlp.YoutubeDL` Python API while preserving the existing download strategies.
+- Added bounded parallel Gemini Files uploads for downloaded media and slideshow images while preserving original slide/file order.
+- Added bounded parallel image downloads for TikTok, Instagram, and YouTube Community photo posts.
+- Tightened runtime dependency bounds for the current yt-dlp/curl_cffi impersonation stack.
+
 ## [1.5.3] - 2026-05-20
 
 ### Fixed

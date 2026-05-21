@@ -7,6 +7,7 @@ import logging
 import os
 import re
 import tempfile
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
@@ -30,6 +31,27 @@ USER_AGENT = (
 
 class CommunityPostError(RuntimeError):
     """Raised when a YouTube community post cannot be extracted safely."""
+
+
+def _env_int(name: str, default: int, minimum: int = 1, maximum: int = 16) -> int:
+    raw = os.environ.get(name, "").strip()
+    if not raw:
+        return default
+    try:
+        value = int(raw)
+    except ValueError:
+        logger.warning("%s must be an integer; using default %s", name, default)
+        return default
+    if value < minimum:
+        logger.warning("%s must be >= %s; using default %s", name, minimum, default)
+        return default
+    return min(value, maximum)
+
+
+def _bounded_worker_count(item_count: int) -> int:
+    if item_count <= 1:
+        return 1
+    return max(1, min(item_count, _env_int("VIDEO_IMAGE_DOWNLOAD_CONCURRENCY", 6)))
 
 
 def _validate_community_url(url: str) -> None:
@@ -257,9 +279,22 @@ def _download_image(url: str, final_path: Path, timeout: int = 60) -> Path:
 def download_community_images(image_urls: list[str], output_dir: Path) -> list[Path]:
     """Download YouTube community image URLs to ``output_dir``."""
     output_dir.mkdir(parents=True, exist_ok=True)
-    paths: list[Path] = []
-    for index, image_url in enumerate(image_urls, start=1):
-        path = _download_image(image_url, output_dir / f"community_{index:02d}.jpg")
-        paths.append(path)
+    worker_count = _bounded_worker_count(len(image_urls))
+
+    def download_one(item: tuple[int, str]) -> Path:
+        index, image_url = item
+        return _download_image(image_url, output_dir / f"community_{index:02d}.jpg")
+
+    items = list(enumerate(image_urls, start=1))
+    if worker_count == 1:
+        paths = [download_one(item) for item in items]
+    else:
+        logger.info(
+            "YouTube community: downloading %d image(s) with %d worker(s)",
+            len(image_urls),
+            worker_count,
+        )
+        with ThreadPoolExecutor(max_workers=worker_count, thread_name_prefix="community-download") as executor:
+            paths = list(executor.map(download_one, items))
     logger.info("YouTube community: downloaded %d image(s)", len(paths))
     return paths

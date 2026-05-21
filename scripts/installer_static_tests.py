@@ -14,7 +14,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-EXPECTED_VERSION = "1.5.2"
+EXPECTED_VERSION = "1.5.4"
 DEFAULT_FAST_MODEL = "gemini-3.5-flash"
 DEFAULT_DEEP_MODEL = "gemini-3.1-pro-preview"
 
