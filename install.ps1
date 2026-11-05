@@ -216,7 +216,7 @@ function Configure-ClaudeDesktop([string]$key, [string]$uvxCmd) {
 
   $current = $null
   if (Test-Path $cfg) {
-    try { $current = Get-Content $cfg -Raw | ConvertFrom-Json -ErrorAction Stop }
+    try { $current = Get-Content $cfg -Raw -Encoding UTF8 | ConvertFrom-Json -ErrorAction Stop }
     catch {
       # Never print the parser message: it can echo part of the file, and the file may hold keys.
       Write-Err "Existing config is not valid JSON: $cfg"
@@ -264,7 +264,7 @@ function Configure-Codex([string]$key, [string]$uvxCmd) {
   $section = "`r`n[mcp_servers.$ServerName]`r`ncommand = `"$cmdToml`"`r`nargs = [`"$PkgName`"]`r`n$envToml"
 
   $existing = ''
-  if (Test-Path $cfg) { $existing = Get-Content $cfg -Raw }
+  if (Test-Path $cfg) { $existing = Get-Content $cfg -Raw -Encoding UTF8 }
   # Strip prior [mcp_servers.video-analyzer] and its .env subtable (idempotent).
   $pattern = '(?ms)^\s*\[mcp_servers\.' + [regex]::Escape($ServerName) + '(\.[^\]]+)?\].*?(?=^\s*\[|\Z)'
   $stripped = [regex]::Replace($existing, $pattern, '').TrimEnd()
@@ -311,7 +311,7 @@ function Configure-JsonClient {
 
   $current = $null
   if (Test-Path $Path) {
-    try { $current = Get-Content $Path -Raw | ConvertFrom-Json -ErrorAction Stop }
+    try { $current = Get-Content $Path -Raw -Encoding UTF8 | ConvertFrom-Json -ErrorAction Stop }
     catch { Write-Warn "$Label JSON invalid; starting fresh."; $current = $null }
   }
   if (-not $current) { $current = [pscustomobject]@{} }
@@ -355,7 +355,7 @@ function Configure-VSCode([string]$key, [string]$uvxCmd) {
 
   $current = $null
   if (Test-Path $cfg) {
-    try { $current = Get-Content $cfg -Raw | ConvertFrom-Json -ErrorAction Stop }
+    try { $current = Get-Content $cfg -Raw -Encoding UTF8 | ConvertFrom-Json -ErrorAction Stop }
     catch { Write-Warn "VS Code JSON invalid; starting fresh."; $current = $null }
   }
   if (-not $current) { $current = [pscustomobject]@{} }
