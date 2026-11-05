@@ -7,7 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- Default models: fast `gemini-3.8-flash` (was `gemini-3.5-flash`) and deep (`detail="full"`) `gemini-4-argon` (was the preview `gemini-3.1-pro-preview`). Ids were checked against https://aistudio.google.com/docs/models on 2026-11-05. `start.bat` now sets only `GEMINI_FAST_MODEL`, so it no longer overrides the deep default.
+- `google-genai` is imported when a Gemini call is made. Importing the server no longer loads the SDK.
+- A missing `GEMINI_API_KEY` returns a structured error (`gemini_api_key_missing`) that names the variable. The local tools run without a key.
+- Dependencies: `fastmcp>=4.1.6,<5` (the version verified), `google-genai>=2.5.0,<3`, and `pydantic>=2.7,<3`, which the server imports directly. `uv.lock` is committed, and CI installs with `uv sync --locked`.
+- The CI lint gate runs ruff's correctness rules (E4, E7, E9, F). Ruff's default set reports 107 style and broad-except findings on this code, and those kept the lint step red before pyright and the tests ran.
+- The PyPI publish workflow runs the test job on the tagged commit, and it publishes only after that job passes. The workflow stays disabled in the repository settings.
+- `.mcp/server.json` matches version 1.5.4, and `GEMINI_API_KEY` is marked optional there.
 - Reused bounded parallel Gemini Files uploads in structured non-YouTube analysis paths (`find_video_moments`, `analyze_video_segment`, and `prepare_video_context`) so multi-file media keeps the v1.5.4 speedup outside the basic analysis tool too.
+
+### Fixed
+- The pyright errors in `server.py` and `slideshow.py` are fixed: the ThinkingLevel enum is passed instead of a string, and the download strategies list is annotated.
+- `execute_tutorial_steps` keeps backslashes in Windows command paths. No shell is introduced.
+- Tutorial file writes refuse forward-slash spellings of protected Windows locations.
+- An unreadable saved context no longer breaks lookups. Saved contexts are written through a temp file and replaced atomically.
+- `list_video_sources` works on a fresh install, when the source and asset folders do not exist yet.
+- Gemini uploads that end FAILED or never become ACTIVE are deleted.
+- Oversized downloads raise a structured `download_too_large` error, so the yt-dlp fallback runs.
+- Cache lookups no longer create empty source folders.
+- `get_video_frame` and `get_video_clip` with `force_refresh` regenerate the asset without re-downloading the whole source.
+- Synonym matching is whole-word, so `auto` no longer matches `automatically`.
+- The TikTok `no_compatible_format` message includes the last yt-dlp error.
+- Slideshow image and audio downloads check every redirect hop against the host allowlist.
+- YouTube community fetches turn HTTP errors, including 429, into a `CommunityPostError`.
+- Windows wizard: Codex TOML command values escape backslashes correctly. A stale `[mcp_servers.video-analyzer.env]` table is removed on re-run. Invalid Claude Desktop JSON stops the run instead of replacing the file. Config files are written without a BOM. The Microsoft Store config path is used when present. The printed `claude mcp add` command quotes the path. Python below 3.10 stops the installer. The key mask shows no characters of the key.
+- `start.bat --check` reports the fast default under `GEMINI_FAST_MODEL`.
+- README, CONTRIBUTING and llms-install.md no longer describe settings the server does not read, and the README data-directory defaults match the code.
+
+### Testing
+- The suite removes `GEMINI_API_KEY`, `GOOGLE_API_KEY` and the model override variables before the server is imported, and it refuses non-loopback network connections.
+- Gemini paths are tested only through a fake client. Nothing in this release has been run against the live Gemini API. The model ids come from the official model page, and the thinking-level settings for `gemini-4-argon` are unverified against live calls.
 
 ## [1.5.4] - 2026-05-21
 
