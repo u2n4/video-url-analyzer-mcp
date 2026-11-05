@@ -32,13 +32,15 @@ Thank you for your interest in contributing! This document provides guidelines a
 
 3. **Install dependencies:**
    ```bash
-   pip install -r requirements.txt
+   uv sync --all-extras --dev
    ```
 
-4. **Create a `.env` file:**
+4. **Create a `.env` file (optional):**
    ```
    GEMINI_API_KEY=your_gemini_api_key_here
    ```
+   Only Gemini-backed tools need the key. The server starts and the local
+   tools run without it.
 
 5. **Run the server:**
    ```bash

@@ -200,8 +200,8 @@ macOS/Linux). Explicit per-call `model=` arguments still win over env vars.
 | Variable | Effect | Default |
 |---|---|---|
 | `VIDEO_ANALYZER_MODEL` | Single-knob default for both fast and deep model resolution. | _unset_ |
-| `GEMINI_FAST_MODEL` | Overrides the model used for compact/standard detail modes. | `gemini-3.5-flash` |
-| `GEMINI_DEEP_MODEL` | Overrides the model used for the `full` detail mode. | `gemini-3.1-pro-preview` |
+| `GEMINI_FAST_MODEL` | Overrides the model used for compact/standard detail modes. | `gemini-3.8-flash` |
+| `GEMINI_DEEP_MODEL` | Overrides the model used for the `full` detail mode. | `gemini-4-argon` |
 
 Resolution order at call time:
 
@@ -210,6 +210,7 @@ Resolution order at call time:
 3. `VIDEO_ANALYZER_MODEL` (umbrella override for both)
 4. the hardcoded fallbacks above
 
-Model availability may vary by Google account, region, and API tier. If
-the Gemini 3.1 preview ids are not enabled for your key, set
-`VIDEO_ANALYZER_MODEL=gemini-flash-latest` as a stable fallback.
+Model availability may vary by Google account, region, and API tier. If a
+model id is rejected for your key, set `GEMINI_FAST_MODEL` or
+`GEMINI_DEEP_MODEL` to a model your account can use. The Stable Flash-Lite
+model `gemini-3.5-flash-lite` is a cheaper fast option.

@@ -1,17 +1,17 @@
 <!-- mcp-name: io.github.u2n4/video-url-analyzer-mcp -->
 <p align="center">
-  <img src="assets/banner.png" alt="Video Analyzer MCP Server" width="100%">
+  <img src="https://raw.githubusercontent.com/u2n4/video-url-analyzer-mcp/main/assets/banner.png" alt="Video Analyzer MCP Server" width="100%">
 </p>
 
 <h1 align="center">Video Analyzer MCP Server</h1>
 
 <p align="center">
   <strong>Analyze any video with AI — YouTube, TikTok & Instagram</strong><br>
-  Powered by <a href="https://ai.google.dev/gemini-api">Google Gemini 3.5 Flash</a> &middot; <a href="https://github.com/jlowin/fastmcp">FastMCP</a> &middot; <a href="https://github.com/yt-dlp/yt-dlp">yt-dlp</a>
+  Powered by <a href="https://ai.google.dev/gemini-api">Google Gemini 3.8 Flash</a> &middot; <a href="https://github.com/jlowin/fastmcp">FastMCP</a> &middot; <a href="https://github.com/yt-dlp/yt-dlp">yt-dlp</a>
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/Gemini-3.5_Flash-4285F4?style=for-the-badge&logo=google&logoColor=white" alt="Gemini 3.5 Flash">
+  <img src="https://img.shields.io/badge/Gemini-3.8_Flash-4285F4?style=for-the-badge&logo=google&logoColor=white" alt="Gemini 3.8 Flash">
   <img src="https://img.shields.io/badge/Python-3.10+-3776AB?style=for-the-badge&logo=python&logoColor=white" alt="Python 3.10+">
   <img src="https://img.shields.io/badge/MCP-stdio-00C853?style=for-the-badge" alt="MCP stdio">
   <img src="https://img.shields.io/badge/Security-Hardened-8E24AA?style=for-the-badge&logo=shieldsdotio&logoColor=white" alt="Security Hardened">
@@ -32,7 +32,7 @@
 ## Features
 
 <p align="center">
-  <img src="assets/features.png" alt="Features — Analyze, Transcript, Ask" width="80%">
+  <img src="https://raw.githubusercontent.com/u2n4/video-url-analyzer-mcp/main/assets/features.png" alt="Features — Analyze, Transcript, Ask" width="80%">
 </p>
 
 v1.5.4 exposes **18 MCP tools**:
@@ -87,7 +87,8 @@ v1.5.4 exposes **18 MCP tools**:
 
 | Component | Role |
 |-----------|------|
-| **Gemini 3.5 Flash** | Latest Gemini Flash model — full audio + visual understanding in a single pass |
+| **Gemini 3.8 Flash** | Latest Flash model, the fast default: full audio + visual understanding in a single pass |
+| **Gemini 4 Argon** | Latest flagship reasoning model, the deep default for `detail="full"`: text, image, video, audio and PDF input |
 | **FastMCP 3.x** | MCP protocol framework over stdio transport |
 | **yt-dlp + curl_cffi** | Video download with Chrome browser impersonation to bypass anti-bot. TikTok downloads prefer locally decodable MP4 H.264/H.265 formats and reject ByteDance `bvc2`/`bytevc2` streams. |
 | **tikwm.com API** | TikTok fast-path fallback when yt-dlp is WAF-blocked |
@@ -160,8 +161,8 @@ The wizard:
 - Verifies Python 3.10+ and (optionally) `uv`.
 - Installs the package as an editable checkout or via `uv tool install`.
 - Lets you save `GEMINI_API_KEY` to a User environment variable **or** to a
-  gitignored `.env.keys.local`. Keys are masked in logs (`AIza...abcd`),
-  never printed in full.
+  gitignored `.env.keys.local`. Keys are never printed; the wizard shows
+  only their length.
 - Lets you pick a default model via `VIDEO_ANALYZER_MODEL`.
 - Runs an offline import smoke test.
 - Hands off to `scripts/configure_mcp_clients.ps1` for client setup.
@@ -178,13 +179,15 @@ python -m video_url_analyzer_mcp
 Get a free key at [Google AI Studio](https://aistudio.google.com/apikey),
 then set it once in your shell environment (`setx GEMINI_API_KEY ...` on
 Windows, or your `~/.zshrc` / `~/.bashrc` on macOS/Linux). For local dev
-only, you can also drop it in a gitignored `.env.keys.local` next to the
-repo.
+only, you can also put it in a gitignored `.env` file in the repo root. The
+server reads `.env`. `start.bat` also reads `.env.keys.local`, which the
+wizard writes.
 
 ### Windows launcher
 
-`start.bat` loads `.env.keys.local` (if present), sets safe defaults
-(`VIDEO_ANALYZER_MODE=auto`), and runs `python -m video_url_analyzer_mcp`.
+`start.bat` loads `.env.keys.local` (if present), sets `VIDEO_ANALYZER_MODE=auto`
+and `GEMINI_FAST_MODEL=gemini-3.8-flash` when they are unset, and runs
+`python -m video_url_analyzer_mcp`. It does not set the deep model.
 Use it as a `command` value in any MCP client that prefers a single
 executable.
 
@@ -274,7 +277,7 @@ Cline — live in [`docs/mcp-config-examples.md`](docs/mcp-config-examples.md).
 ## Usage Examples
 
 ```python
-# Full video analysis with Gemini 3.5 Flash
+# Full video analysis with Gemini 3.8 Flash
 analyze_video("https://www.youtube.com/watch?v=dQw4w9WgXcQ")
 
 # Custom analysis prompt
@@ -326,10 +329,11 @@ This server has been hardened against a comprehensive threat model audit:
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `GEMINI_API_KEY` | Google Gemini API key | **Required** |
-| `ANALYSES_DIR` | Directory for saved analyses | `./analyses` |
-| `VIDEO_CONTEXT_DIR` | Directory for saved reusable video contexts | `video_contexts` |
-| `VIDEO_SOURCE_DIR` | Directory for cached downloaded source media | `video_sources` |
-| `VIDEO_ASSET_DIR` | Directory for extracted frames/clips | `video_assets` |
+| `VIDEO_ANALYZER_DATA_DIR` | Root for the four data directories below | OS user-data directory, e.g. `%LOCALAPPDATA%\video-url-analyzer-mcp` on Windows |
+| `ANALYSES_DIR` | Directory for saved analyses | `$VIDEO_ANALYZER_DATA_DIR/analyses` |
+| `VIDEO_CONTEXT_DIR` | Directory for saved reusable video contexts | `$VIDEO_ANALYZER_DATA_DIR/video_contexts` |
+| `VIDEO_SOURCE_DIR` | Directory for cached downloaded source media | `$VIDEO_ANALYZER_DATA_DIR/video_sources` |
+| `VIDEO_ASSET_DIR` | Directory for extracted frames/clips | `$VIDEO_ANALYZER_DATA_DIR/video_assets` |
 | `VIDEO_ANALYZER_COOKIES` | Enable browser cookie access (`true`/`false`) | `false` |
 | `VIDEO_DOWNLOAD_TIMEOUT` | Override download and yt-dlp timeout values, in seconds | Existing per-operation defaults |
 | `VIDEO_FFMPEG_TIMEOUT` | Override ffmpeg extraction timeout values, in seconds | Existing per-operation defaults |
@@ -337,16 +341,15 @@ This server has been hardened against a comprehensive threat model audit:
 | `VIDEO_IMAGE_DOWNLOAD_CONCURRENCY` | Parallel image downloads for TikTok/Instagram/YouTube photo posts | `6` |
 | `VIDEO_GEMINI_UPLOAD_CONCURRENCY` | Parallel Gemini Files uploads for downloaded media and slideshow images | `4` |
 | `VIDEO_ANALYZER_MODEL` | Single-knob default model id used for both fast and deep model resolution. Per-call `model=` and `GEMINI_FAST_MODEL` / `GEMINI_DEEP_MODEL` still take precedence. | _unset_ |
-| `GEMINI_FAST_MODEL` | Override for compact/standard detail mode | `gemini-3.5-flash` |
-| `GEMINI_DEEP_MODEL` | Override for `full` detail mode | `gemini-3.1-pro-preview` |
+| `GEMINI_FAST_MODEL` | Override for compact/standard detail mode | `gemini-3.8-flash` |
+| `GEMINI_DEEP_MODEL` | Override for `full` detail mode | `gemini-4-argon` |
+| `VIDEO_ANALYZER_MODE` | Informational only: `start.bat` sets and prints it. The server does not read it. | `auto` |
 
-> Default fast model: `gemini-3.5-flash`. Default deep model
-> (used when `detail="full"`): `gemini-3.1-pro-preview`. Set
-> `VIDEO_ANALYZER_MODEL` to override both at once. Model availability can
-> vary by Google account, region, and API tier — fall back to
-> `gemini-flash-latest` if the latest ids are not yet enabled for your
-> key.
-| `VIDEO_ANALYZER_MODE` | Behavior preset (`auto` / `api` / `client` / `local`); read by `start.bat` | `auto` |
+> Default fast model: `gemini-3.8-flash`. Default deep model (used when
+> `detail="full"`): `gemini-4-argon`. Set `VIDEO_ANALYZER_MODEL` to override
+> both at once. Model availability can vary by Google account, region, and
+> API tier. Ids were checked against https://aistudio.google.com/docs/models
+> on 2026-11-05.
 
 ---
 
@@ -372,7 +375,8 @@ This server has been hardened against a comprehensive threat model audit:
 
 | Technology | Version | Purpose |
 |-----------|---------|---------|
-| [Google Gemini 3.5 Flash](https://ai.google.dev/gemini-api) | Latest | Multimodal video analysis engine |
+| [Google Gemini 3.8 Flash](https://ai.google.dev/gemini-api) | Latest Flash (fast default) | Multimodal video analysis engine |
+| [Gemini 4 Argon](https://ai.google.dev/gemini-api) | Latest flagship (deep default) | Reasoning over long video, `detail="full"` |
 | [FastMCP](https://github.com/jlowin/fastmcp) | 3.3.1+ | MCP protocol framework |
 | [yt-dlp](https://github.com/yt-dlp/yt-dlp) | 2026.3.17+ | Video downloader |
 | [curl_cffi](https://github.com/lexiforest/curl_cffi) | >=0.7.4,<0.15.0 | Browser impersonation (TLS fingerprint), pinned for yt-dlp 2026.03.17 compatibility |
@@ -391,12 +395,12 @@ MIT
 ## العربية
 
 <p align="center">
-  <img src="assets/banner.png" alt="خادم تحليل الفيديو" width="100%">
+  <img src="https://raw.githubusercontent.com/u2n4/video-url-analyzer-mcp/main/assets/banner.png" alt="خادم تحليل الفيديو" width="100%">
 </p>
 
 ### خادم تحليل الفيديو بالذكاء الاصطناعي
 
-خادم MCP لتحليل الفيديو باستخدام **Google Gemini 3.5 Flash** — احدث نموذج Gemini Flash متعدد الوسائط من جوجل.
+خادم MCP لتحليل الفيديو باستخدام **Google Gemini 3.8 Flash** — احدث نموذج Gemini Flash متعدد الوسائط من جوجل.
 
 ### المميزات
 
