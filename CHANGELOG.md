@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
-- Default models: fast `gemini-3.8-flash` (was `gemini-3.5-flash`) and deep (`detail="full"`) `gemini-4-argon` (was the preview `gemini-3.1-pro-preview`). Ids were checked against https://aistudio.google.com/docs/models on 2026-11-05. `start.bat` now sets only `GEMINI_FAST_MODEL`, so it no longer overrides the deep default.
+- Default models: fast `gemini-3.8-flash` (was `gemini-3.5-flash`) and deep (`detail="full"`) `gemini-4-argon` (was the preview `gemini-3.1-pro-preview`). Ids were checked against https://aistudio.google.com/docs/models on 2026-11-05. `start.bat` no longer sets a model id, so it overrides neither the deep default nor `VIDEO_ANALYZER_MODEL` from the environment or `.env`.
 - `google-genai` is imported when a Gemini call is made. Importing the server no longer loads the SDK.
 - A missing `GEMINI_API_KEY` returns a structured error (`gemini_api_key_missing`) that names the variable. The local tools run without a key.
 - Dependencies: `fastmcp>=4.1.6,<5` (the version verified), `google-genai>=2.5.0,<3`, and `pydantic>=2.7,<3`, which the server imports directly. `uv.lock` is committed, and CI installs with `uv sync --locked`.
@@ -31,7 +31,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Slideshow image and audio downloads check every redirect hop against the host allowlist.
 - YouTube community fetches turn HTTP errors, including 429, into a `CommunityPostError`.
 - Windows wizard: Codex TOML command values escape backslashes correctly. A stale `[mcp_servers.video-analyzer.env]` table is removed on re-run. Invalid Claude Desktop JSON stops the run instead of replacing the file. Config files are written without a BOM. The Microsoft Store config path is used when present. The printed `claude mcp add` command quotes the path. Python below 3.10 stops the installer. The key mask shows no characters of the key.
-- `start.bat --check` reports the fast default under `GEMINI_FAST_MODEL`.
+- `start.bat --check` reports the fast model it will use: the `GEMINI_FAST_MODEL` value when set, otherwise `VIDEO_ANALYZER_MODEL` or `gemini-3.8-flash`.
 - README, CONTRIBUTING and llms-install.md no longer describe settings the server does not read, and the README data-directory defaults match the code.
 
 ### Testing

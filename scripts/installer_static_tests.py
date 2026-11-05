@@ -288,28 +288,50 @@ def test_start_bat_avoids_start_command():
     _ok("start_bat_avoids_start_command")
 
 
-def test_start_bat_check_mode_runs():
-    """Run the launcher in check mode and confirm it reports correctly without
-    starting the MCP server."""
-    bat = ROOT / "start.bat"
+def _run_start_bat_check(overrides: dict[str, str]) -> tuple[int, str]:
+    """Run the launcher in check mode with the model variables cleared first.
+
+    A developer's own VIDEO_ANALYZER_MODEL or GEMINI_*_MODEL must not change
+    what these tests see, so those names are removed before overrides apply.
+    """
     env = os.environ.copy()
     env["GEMINI_API_KEY"] = ""
+    for name in ("GEMINI_FAST_MODEL", "GEMINI_DEEP_MODEL", "VIDEO_ANALYZER_MODEL"):
+        env.pop(name, None)
+    env.update(overrides)
     proc = subprocess.run(
-        ["cmd", "/c", str(bat), "--check"],
+        ["cmd", "/c", str(ROOT / "start.bat"), "--check"],
         cwd=ROOT,
         capture_output=True,
         text=True,
         timeout=120,
         env=env,
     )
-    out = proc.stdout + proc.stderr
-    if proc.returncode != 0:
-        _fail("start_bat_check_mode_runs", f"exit={proc.returncode}\n{out}")
+    return proc.returncode, proc.stdout + proc.stderr
+
+
+def test_start_bat_check_mode_runs():
+    """Run the launcher in check mode and confirm it reports correctly without
+    starting the MCP server."""
+    rc, out = _run_start_bat_check({})
+    if rc != 0:
+        _fail("start_bat_check_mode_runs", f"exit={rc}\n{out}")
     if "IMPORT_OK" not in out or "check mode: OK" not in out:
         _fail("start_bat_check_mode_runs", f"missing markers in output:\n{out}")
     if DEFAULT_FAST_MODEL not in out:
         _fail("start_bat_check_mode_runs", f"default model not surfaced:\n{out}")
     _ok("start_bat_check_mode_runs")
+
+
+def test_start_bat_leaves_umbrella_model_to_server():
+    """VIDEO_ANALYZER_MODEL reaches the fast role through the server, so start.bat
+    must not pin GEMINI_FAST_MODEL to a default of its own."""
+    rc, out = _run_start_bat_check({"VIDEO_ANALYZER_MODEL": "umbrella-check-id"})
+    if rc != 0 or "check mode: OK" not in out:
+        _fail("start_bat_leaves_umbrella_model_to_server", f"exit={rc}\n{out}")
+    if "GEMINI_FAST_MODEL is unset" not in out or "VIDEO_ANALYZER_MODEL=umbrella-check-id" not in out:
+        _fail("start_bat_leaves_umbrella_model_to_server", f"start.bat set the fast model:\n{out}")
+    _ok("start_bat_leaves_umbrella_model_to_server")
 
 
 # ---------------------------------------------------------------------------
@@ -380,6 +402,7 @@ def main():
     test_start_bat_does_not_echo_api_key()
     test_start_bat_avoids_start_command()
     test_start_bat_check_mode_runs()
+    test_start_bat_leaves_umbrella_model_to_server()
     test_tool_count_remains_18()
     test_import_without_api_key_subprocess()
     print("ALL_PASS")

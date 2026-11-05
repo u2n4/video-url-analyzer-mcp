@@ -186,8 +186,9 @@ wizard writes.
 ### Windows launcher
 
 `start.bat` loads `.env.keys.local` (if present), sets `VIDEO_ANALYZER_MODE=auto`
-and `GEMINI_FAST_MODEL=gemini-3.8-flash` when they are unset, and runs
-`python -m video_url_analyzer_mcp`. It does not set the deep model.
+when it is unset, and runs `python -m video_url_analyzer_mcp`. It sets no model id,
+so the model variables from your environment or `.env` apply, as the table below
+describes.
 Use it as a `command` value in any MCP client that prefers a single
 executable.
 
