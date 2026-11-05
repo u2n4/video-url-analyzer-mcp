@@ -245,9 +245,8 @@ logger = logging.getLogger("video-analyzer")
 #   3. ``VIDEO_ANALYZER_MODEL`` umbrella env var
 #   4. the hardcoded fallbacks below
 # Checked against https://aistudio.google.com/docs/models on 2026-11-05.
-# gemini-3.8-flash is Stable and is the Flash model that page recommends
-# for new projects. gemini-4-argon is Stable and is the page's latest,
-# most capable model (text, image, video, audio and PDF input).
+# gemini-3.8-flash and gemini-4-argon are both listed on that models page.
+# gemini-4-argon takes text, image, video, audio and PDF input, per that page.
 FAST_MODEL_FALLBACK = "gemini-3.8-flash"
 DEEP_MODEL_FALLBACK = "gemini-4-argon"
 _VIDEO_ANALYZER_MODEL_OVERRIDE = (
@@ -5342,14 +5341,42 @@ _BLOCKED_COMMANDS = re.compile(
     r"|wget\s+[^|]*\|\s*"       # wget | (download & pipe)
     r"|nc\s+-[el]"              # netcat listen/exec (reverse shell)
     r"|ncat\s+-[el]"
-    r"|python[3]?\s+-c\s"       # inline code execution
-    r"|node\s+-e\s"
     r"|\beval\s"                # eval/exec
     r"|\bexec\s"
     r"|>\s*/dev/sd"             # overwrite disk device
     r"|Add-MpPreference"        # disable Windows Defender
     r"|Set-MpPreference"
     r")",
+    re.IGNORECASE,
+)
+
+# Inline-code and shell forms. Options may come before the code flag. A script
+# or module name ends the scan, so "python script.py -c x" and
+# "python -m pytest -c x.ini" are not matched.
+_CMD_OPT = r"(?:\s+-\S+(?:\s+(?!-)\S+)?)*?"
+_PY_OPT = r"(?:\s+-(?!m\b)\S+(?:\s+(?!-)\S+)?)*?"
+_INLINE_CODE_RULES = (
+    # python, python3.12, python.exe, pythonw, pypy, the py launcher; -c also in a cluster such as -uc
+    r"\b(?:python(?:w)?(?:\d+(?:\.\d+)*)?|pypy(?:\d+(?:\.\d+)*)?|py)(?:\.exe)?"
+    + _PY_OPT
+    + r"\s+-[a-zA-Z]*c\S*",
+    # node: -e, -p, --eval, --print
+    r"\bnode(?:js)?(?:\.exe)?" + _CMD_OPT + r"\s+(?:-[ep]\S*|--(?:eval|print)\b)",
+    # perl: -e, -E, and clusters such as -ne or -lne
+    r"\bperl(?:5(?:\.\d+)*)?(?:\.exe)?" + _CMD_OPT + r"\s+-[lnpaFi0-9]*[eE]\S*",
+    # ruby: -e, and clusters such as -ne
+    r"\bruby(?:\d+(?:\.\d+)*)?(?:\.exe)?" + _CMD_OPT + r"\s+-[lnpa]*e\S*",
+    # php: -r
+    r"\bphp(?:\d+(?:\.\d+)*)?(?:\.exe)?" + _CMD_OPT + r"\s+-r\S*",
+    # PowerShell: -Command and any prefix; -EncodedCommand and any prefix (but not -ex or -ep)
+    r"\b(?:pwsh|powershell)(?:\.exe)?" + _CMD_OPT + r"\s+-(?:c\S*|e(?![xp])\S*|en\S*)",
+    # cmd: /c and /k
+    r"\bcmd(?:\.exe)?(?:\s*/\S+)*?\s*/[ck]\S*",
+    # sh, bash, zsh: -c, and clusters such as -lc
+    r"\b(?:bash|sh|zsh)(?:\.exe)?" + _CMD_OPT + r"\s+-[a-zA-Z]*c\S*",
+)
+_INLINE_CODE_COMMANDS = re.compile(
+    "(" + "|".join(_INLINE_CODE_RULES) + ")",
     re.IGNORECASE,
 )
 
@@ -5367,8 +5394,19 @@ def _command_for_subprocess(cmd: str, windows: bool = os.name == "nt") -> str | 
 
 
 def _validate_command(cmd: str) -> bool:
-    """Return True if a command is safe to execute."""
-    return not _BLOCKED_COMMANDS.search(cmd)
+    """Return True if a tutorial command passes the blocklist.
+
+    The blocklist is a speed bump, not a security boundary. Human review of the
+    steps before confirm=true is the real gate. The check runs on the raw text
+    and on the text with quotes removed, because the program receives the
+    command line after its own quote parsing.
+    """
+    unquoted = cmd.replace('"', "").replace("'", "")
+    return not any(
+        pattern.search(text)
+        for text in (cmd, unquoted)
+        for pattern in (_BLOCKED_COMMANDS, _INLINE_CODE_COMMANDS)
+    )
 
 
 def _parse_gemini_json(text: str) -> dict:
