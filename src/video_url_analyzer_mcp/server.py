@@ -6,6 +6,7 @@ using Google's Gemini API with full audio + visual analysis.
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import ipaddress
 import json
@@ -2030,17 +2031,26 @@ def _replace_with_retry(src: Path, dst: Path, attempts: int = 40) -> None:
             time.sleep(0.25)
 
 
+def _unique_temp_path(path: Path) -> Path:
+    """A temp file next to path that no other save shares."""
+    return path.with_name(f"{path.name}.{uuid.uuid4().hex}.tmp")
+
+
 def _save_video_context(ctx: SavedVideoContext) -> str:
     """Persist a structured video context and return its path."""
     VIDEO_CONTEXT_DIR.mkdir(parents=True, exist_ok=True)
     _ensure_context_quality(ctx)
     path = _context_path(ctx.video_id)
-    temp = path.with_name(f"{path.name}.tmp")
-    temp.write_text(
-        json.dumps(ctx.model_dump(), indent=2, ensure_ascii=False),
-        encoding="utf-8",
-    )
-    _replace_with_retry(temp, path)
+    temp = _unique_temp_path(path)
+    try:
+        temp.write_text(
+            json.dumps(ctx.model_dump(), indent=2, ensure_ascii=False),
+            encoding="utf-8",
+        )
+        _replace_with_retry(temp, path)
+    finally:
+        with contextlib.suppress(OSError):
+            temp.unlink(missing_ok=True)
     logger.info("Video context saved to %s", path)
     return str(path)
 
