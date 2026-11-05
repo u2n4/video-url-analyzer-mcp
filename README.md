@@ -314,7 +314,7 @@ This server has been hardened against a comprehensive threat model audit:
 | Layer | Protection |
 |-------|-----------|
 | **SSRF** | URL allowlist — only YouTube, TikTok, Instagram domains accepted. Private IPs, localhost, `file://` blocked. |
-| **Command Injection** | `shell=False`, no shell. On Windows the command reaches the program as typed; on POSIX it is split with `shlex`. The blocklist (rm -rf, reverse shells, eval, pipe-to-shell, and inline code such as `python -c`, `node -e`, `perl -e`, `pwsh -Command`, `cmd /c`, `bash -c`) checks the raw and quote-stripped text. It is a speed bump, not a security boundary. Human review of the steps before `execute_tutorial_steps` runs with `confirm=true` is the real gate. |
+| **Command Injection** | `shell=False`, no shell. On Windows the command reaches the program as typed; on POSIX it is split with `shlex`. Before it runs, the command is checked: at most 4096 characters, the old blocklist on the raw and quote-stripped text, and the argv the program will receive. Shells are refused. Script interpreters (python, py, pypy, node, perl, ruby, php) run only a script path, or `python -m pip`, `pytest` or `venv`. The blocklist is a speed bump, not a security boundary. Human review of the steps before `execute_tutorial_steps` runs with `confirm=true` is the real gate. `python script.py` can still run a script written by an earlier step, and that is accepted. |
 | **Path Traversal** | 25+ sensitive path patterns blocked (`.ssh`, `.aws`, `.env`, system dirs, AppData). |
 | **TLS** | Full certificate validation on all downloads. |
 | **Browser Cookies** | Opt-in only via `VIDEO_ANALYZER_COOKIES=true`. Disabled by default. |
