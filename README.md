@@ -314,7 +314,7 @@ This server has been hardened against a comprehensive threat model audit:
 | Layer | Protection |
 |-------|-----------|
 | **SSRF** | URL allowlist — only YouTube, TikTok, Instagram domains accepted. Private IPs, localhost, `file://` blocked. |
-| **Command Injection** | `shell=False`, no shell. On Windows the command reaches the program as typed; on POSIX it is split with `shlex`. Before it runs, the command is checked: at most 4096 characters, the old blocklist on the raw and quote-stripped text, and the argv the program will receive. Shells are refused. Script interpreters (python, py, pypy, node, perl, ruby, php) run only a script path, or `python -m pip`, `pytest` or `venv`. The blocklist is a speed bump, not a security boundary. Human review of the steps before `execute_tutorial_steps` runs with `confirm=true` is the real gate. `python script.py` can still run a script written by an earlier step, and that is accepted. |
+| **Command Injection** | `shell=False`, no shell. Each tutorial command is parsed once into an argv list (`shlex` on POSIX, `CommandLineToArgvW` on Windows), and that same list is what runs. Only programs on the allowlist run: `git`, `npm`, `pip`, `pip3`, `python`, `python3`, `py` and `node`. More can be added with `VIDEO_ANALYZER_ALLOWED_PROGRAMS`. Shells are never allowed. `python`, `py` and `node` take a script path first; `python -m pip`, `-m pytest` and `-m venv` are also allowed. `git` refuses `-c` and `--config-env` anywhere in the command. Commands over 4096 characters are refused, and the old blocklist still checks the raw and quote-stripped text. The allowlist and blocklist are speed bumps, not a security boundary: `npm run`, `npm install`, `pip install` and `python script.py` still run project code. Human review of the steps before `execute_tutorial_steps` runs with `confirm=true` is the real gate. `python script.py` can still run a script written by an earlier step, and that is accepted. On Windows, `npm` is `npm.cmd`, which `shell=False` cannot start, so npm steps fail to start there. |
 | **Path Traversal** | 25+ sensitive path patterns blocked (`.ssh`, `.aws`, `.env`, system dirs, AppData). |
 | **TLS** | Full certificate validation on all downloads. |
 | **Browser Cookies** | Opt-in only via `VIDEO_ANALYZER_COOKIES=true`. Disabled by default. |
@@ -336,6 +336,7 @@ This server has been hardened against a comprehensive threat model audit:
 | `VIDEO_SOURCE_DIR` | Directory for cached downloaded source media | `$VIDEO_ANALYZER_DATA_DIR/video_sources` |
 | `VIDEO_ASSET_DIR` | Directory for extracted frames/clips | `$VIDEO_ANALYZER_DATA_DIR/video_assets` |
 | `VIDEO_ANALYZER_COOKIES` | Enable browser cookie access (`true`/`false`) | `false` |
+| `VIDEO_ANALYZER_ALLOWED_PROGRAMS` | Extra programs tutorial steps may run, as comma-separated names (for example `ffmpeg,yt-dlp`). Only the name is compared: the directory and `.exe` are ignored. Shells are never allowed. A listed program gets no argument rules, so list only programs you trust with any arguments. | _unset_ (built-in list only) |
 | `VIDEO_DOWNLOAD_TIMEOUT` | Override download and yt-dlp timeout values, in seconds | Existing per-operation defaults |
 | `VIDEO_FFMPEG_TIMEOUT` | Override ffmpeg extraction timeout values, in seconds | Existing per-operation defaults |
 | `VIDEO_GEMINI_TIMEOUT` | Optional Gemini HTTP timeout, in seconds | SDK default |
@@ -440,7 +441,7 @@ powershell -ExecutionPolicy Bypass -File scripts\install_windows.ps1
 
 الخادم محمي ضد:
 - **SSRF** — قائمة بيضاء للنطاقات المسموحة فقط
-- **حقن الاوامر** — حظر الاوامر الخطيرة + تنفيذ بدون shell
+- **حقن الاوامر** — قائمة السماح بالبرامج + تنفيذ بدون shell
 - **اختراق المسارات** — حظر 25+ مسار حساس
 - **حماية من الحمل الزائد** — حد اقصى 10 مهام متزامنة
 

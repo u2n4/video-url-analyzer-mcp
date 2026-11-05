@@ -5353,26 +5353,21 @@ _BLOCKED_COMMANDS = re.compile(
 )
 
 
-def _command_for_subprocess(cmd: str, windows: bool = os.name == "nt") -> str | list[str]:
-    """Return the subprocess argument for a tutorial command, with shell=False.
-
-    On Windows the command line goes to CreateProcess unchanged, so each program
-    parses its own quoting as the author typed it. POSIX commands are split with
-    shlex, which matches shell escaping there.
-    """
-    if windows:
-        return cmd
-    return shlex.split(cmd)
-
-
-# Tutorial command checks. The blocklist is a speed bump, not a security
-# boundary: human review of the steps before confirm=true is the real gate.
+# Tutorial command checks. A command runs only when its program is on the
+# allowlist and its arguments pass the rules in _argument_refusal. The
+# allowlist and blocklist are speed bumps, not a security boundary: npm run,
+# npm install, pip install and python script.py still run project code, so
+# human review of the steps before confirm=true is the real gate.
 MAX_COMMAND_CHARS = 4096
+ALLOWED_PROGRAMS_ENV = "VIDEO_ANALYZER_ALLOWED_PROGRAMS"
+DEFAULT_ALLOWED_PROGRAMS = frozenset(
+    {"git", "npm", "pip", "pip3", "python", "python3", "py", "node"}
+)
 _SHELL_PROGRAMS = frozenset(
     {"sh", "bash", "zsh", "dash", "ksh", "fish", "cmd", "powershell", "pwsh"}
 )
-_PYTHON_PROGRAM = re.compile(r".*python[\d.]*[a-z]{0,2}|pypy[\d.]*|py")
-_SCRIPT_INTERPRETERS = frozenset({"node", "perl", "ruby", "php"})
+_PYTHON_PROGRAMS = frozenset({"python", "python3", "py"})
+_SCRIPT_FIRST_PROGRAMS = _PYTHON_PROGRAMS | {"node"}
 _PYTHON_MODULES = frozenset({"pip", "pytest", "venv"})
 
 
@@ -5405,48 +5400,119 @@ def _argv_windows(cmd: str) -> list[str]:
         local_free(ctypes.cast(argv, ctypes.c_void_p))
 
 
-def _program_name(argv0: str) -> str:
-    """Basename of argv[0], lowercased, without a .exe suffix."""
-    base = argv0.replace("\\", "/").rsplit("/", 1)[-1].lower()
+def _program_name(argv0: str, windows: bool = os.name == "nt") -> str:
+    """Basename of argv[0] under the platform's path rules, lowercased, without .exe.
+
+    Windows accepts either slash as a separator. POSIX allows a backslash inside
+    a file name, so only '/' separates there.
+    """
+    parts = re.split(r"[\\/]", argv0) if windows else argv0.split("/")
+    base = parts[-1].lower()
     return base[:-4] if base.endswith(".exe") else base
 
 
-def _argv_is_allowed(argv: list[str]) -> bool:
-    """Decide from the argv the program will receive."""
-    # A quote left inside argv[0] (Windows keeps pe"rl") is not a program name.
-    if not argv or any(ch in argv[0] for ch in "\"'"):
-        return False
-    name = _program_name(argv[0])
-    if not name or name in _SHELL_PROGRAMS:
-        return False
+def _allowed_programs(windows: bool) -> frozenset[str]:
+    """The default allowlist plus the names in ALLOWED_PROGRAMS_ENV, never shells."""
+    listed = os.environ.get(ALLOWED_PROGRAMS_ENV, "").split(",")
+    extra = {_program_name(part.strip(), windows) for part in listed if part.strip()}
+    return (DEFAULT_ALLOWED_PROGRAMS | extra) - _SHELL_PROGRAMS
+
+
+def _argument_refusal(name: str, argv: list[str]) -> str | None:
+    """Return why an allowed program's arguments are refused, or None."""
     args = argv[1:]
-    script_first = bool(args) and bool(args[0]) and not args[0].startswith("-")
-    if _PYTHON_PROGRAM.fullmatch(name):
-        is_module = len(args) >= 2 and args[0] == "-m" and args[1] in _PYTHON_MODULES
-        return script_first or is_module
-    if name in _SCRIPT_INTERPRETERS:
-        return script_first
-    return True
+    if name == "git":
+        if any(arg.startswith(("-c", "--config-env")) for arg in args):
+            return "refuses -c and --config-env"
+        return None
+    if name in _PYTHON_PROGRAMS and len(args) >= 2 and args[0] == "-m":
+        if args[1] in _PYTHON_MODULES:
+            return None
+    if name in _SCRIPT_FIRST_PROGRAMS:
+        if args and args[0] and not args[0].startswith("-"):
+            return None
+        hint = ""
+        if name in _PYTHON_PROGRAMS:
+            hint = " (python also allows -m pip, -m pytest or -m venv)"
+        return f"needs a script path first{hint}"
+    return None
 
 
-def _validate_command(cmd: str, windows: bool = os.name == "nt") -> bool:
-    """Return True if a tutorial command passes the checks.
+def _program_token_is_plain(cmd: str) -> bool:
+    """True when the program name is unquoted, or one quoted run ending at whitespace.
 
-    Order: a length cap, then the old blocklist on the raw text and on the text
-    with quotes removed, then the argv the program will receive. Shells are
-    refused. Script interpreters run only a script path, or python -m pip,
-    pytest or venv.
+    CommandLineToArgvW reads '"python".exe -c' as program python with the
+    argument '.exe', and the argument rules would take that as a script path.
+    A name whose quotes do not wrap all of it is refused, not guessed at.
     """
+    text = cmd.lstrip()
+    if not text:
+        return False
+    if text[0] in "\"'":
+        close = text.find(text[0], 1)
+        return close != -1 and (close + 1 == len(text) or text[close + 1].isspace())
+    first = text.split(None, 1)[0]
+    return not any(ch in first for ch in "\"'")
+
+
+def _shown_program(cmd: str) -> str:
+    """First word of a command, shortened, for a message only. Never parsed or run."""
+    words = cmd.split(None, 1)
+    return words[0][:60] if words else "unknown"
+
+
+def _refusal(program: str, why: str) -> tuple[None, str]:
+    """A refusal that always names the program and the allowlist variable."""
+    return None, (
+        f"program '{program}': {why}; {ALLOWED_PROGRAMS_ENV} does not change this"
+    )
+
+
+def _vet_command(
+    cmd: str, windows: bool = os.name == "nt"
+) -> tuple[list[str] | None, str | None]:
+    """Parse a tutorial command once and decide whether it may run.
+
+    Returns (argv, None) when the command may run. argv is exactly what
+    subprocess receives. Returns (None, reason) when the command is refused.
+    Order: non-text input, the length cap (before any regex), one parse, the
+    program name, the argument rules, then the old blocklist on the raw and
+    quote-stripped text.
+    """
+    if not isinstance(cmd, str):
+        return _refusal("unknown", "command is not text")
     if len(cmd) > MAX_COMMAND_CHARS:
-        return False
-    unquoted = cmd.replace('"', "").replace("'", "")
-    if _BLOCKED_COMMANDS.search(cmd) or _BLOCKED_COMMANDS.search(unquoted):
-        return False
+        return _refusal(
+            _shown_program(cmd), f"command is longer than {MAX_COMMAND_CHARS} characters"
+        )
     try:
         argv = _argv_windows(cmd) if windows else shlex.split(cmd)
-    except ValueError:
-        return False
-    return _argv_is_allowed(argv)
+    except (ValueError, OSError):
+        return _refusal(_shown_program(cmd), "command cannot be split into arguments")
+    if not argv:
+        return _refusal("unknown", "command is empty")
+    if not _program_token_is_plain(cmd):
+        return _refusal(_shown_program(cmd), "the quotes do not wrap all of the program name")
+    name = _program_name(argv[0], windows)
+    if name in _SHELL_PROGRAMS:
+        return None, (
+            f"program '{name}' is a shell and is never allowed, even when listed in "
+            f"{ALLOWED_PROGRAMS_ENV}"
+        )
+    if name not in _allowed_programs(windows):
+        return None, (
+            f"program '{name}' is not allowed; to allow it, add it to "
+            f"{ALLOWED_PROGRAMS_ENV}"
+        )
+    refusal = _argument_refusal(name, argv)
+    if refusal is not None:
+        return _refusal(name, refusal)
+    unquoted = cmd.replace('"', "").replace("'", "")
+    match = _BLOCKED_COMMANDS.search(cmd) or _BLOCKED_COMMANDS.search(unquoted)
+    if match is not None:
+        shown = match.group(0)[:60]
+        return _refusal(name, f"command matches a blocked pattern ({shown!r})")
+    return argv, None
 
 
 def _parse_gemini_json(text: str) -> dict:
@@ -5786,18 +5852,20 @@ def do_execute_tutorial_steps(
         # Execute commands
         for cmd in cmds:
             log_lines.append(f"  $ {cmd}")
-            if not _validate_command(cmd):
-                log_lines.append("  BLOCKED dangerous command")
+            argv, reason = _vet_command(cmd)
+            if argv is None:
+                log_lines.append(f"  BLOCKED command: {reason}")
                 fail_count += 1
                 continue
             try:
                 result = subprocess.run(
-                    _command_for_subprocess(cmd),
+                    argv,
                     shell=False,
                     capture_output=True,
                     text=True,
                     timeout=120,
                     cwd=str(Path.home()),
+                    stdin=subprocess.DEVNULL,
                 )
                 if result.stdout.strip():
                     for line in result.stdout.strip().split("\n")[:20]:
