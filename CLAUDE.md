@@ -59,7 +59,7 @@ videos, audio) coverage.
 
 - **SDK**: `google-genai` (NOT the older `google-generativeai` package).
 - **Default models**: fast `gemini-3.8-flash`, deep (`detail="full"`) `gemini-4-argon`.
-  Both are Stable on https://aistudio.google.com/docs/models (checked 2026-11-05).
+  Both are listed on https://aistudio.google.com/docs/models (checked 2026-11-05).
   See `FAST_MODEL_FALLBACK` / `DEEP_MODEL_FALLBACK` in server.py. Override
   per-call via the `model` kwarg.
 - **Transport**: stdio (for Claude Desktop integration).
