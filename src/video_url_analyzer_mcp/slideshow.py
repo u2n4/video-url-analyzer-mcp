@@ -13,17 +13,19 @@ import time
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
-from typing import Any, Literal, cast
+from typing import TYPE_CHECKING, Any, Literal, cast
 from urllib.parse import urlparse
 
 import yt_dlp
-from google.genai import errors, types
 
 from .youtube_community import (
     CommunityPostError,
     download_community_images,
     extract_community_post,
 )
+
+if TYPE_CHECKING:
+    from google.genai import types
 
 logger = logging.getLogger("video-analyzer")
 
@@ -776,6 +778,8 @@ def _default_upload_file(client: Any, file_path: str) -> Any:
 
 
 def _is_retryable_gemini_error(exc: Exception) -> bool:
+    from google.genai import errors
+
     if isinstance(exc, errors.ClientError):
         return False
     code = getattr(exc, "code", None)
@@ -801,6 +805,8 @@ def _model_id(model: str) -> str:
 
 
 def _thinking_config_for_model(model: str) -> types.ThinkingConfig | None:
+    from google.genai import types
+
     normalized = _model_id(model)
     if normalized.startswith("gemini-3"):
         return types.ThinkingConfig(thinking_level=types.ThinkingLevel.HIGH)
@@ -810,6 +816,8 @@ def _thinking_config_for_model(model: str) -> types.ThinkingConfig | None:
 
 
 def _default_config(model: str) -> types.GenerateContentConfig:
+    from google.genai import types
+
     kwargs: dict[str, Any] = {
         "media_resolution": types.MediaResolution.MEDIA_RESOLUTION_HIGH,
     }
