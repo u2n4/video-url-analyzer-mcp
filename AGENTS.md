@@ -10,11 +10,11 @@ videos, audio) coverage.
 
 ## Architecture
 
-- `server.py`: Main MCP server with 17 v1.4 tools: the original
+- `server.py`: Main MCP server with 18 tools: the original
   analysis/transcript/Q&A/tutorial tools, structured moment/segment tools,
   saved video context tools, local evidence asset tools, and cache tools.
 - Pipelines:
-  - **YouTube**: Direct analysis via `Part.from_uri()` (no download).
+  - **YouTube**: Direct analysis: the YouTube URL is sent as a `FileData` part (no download).
   - **TikTok/Instagram video**: Fast-path API/scrape → yt-dlp fallback →
     upload to Gemini Files API → analyze → cleanup.
   - **TikTok/Instagram photo carousel**: Scrape image URLs from page/API →
@@ -47,7 +47,7 @@ videos, audio) coverage.
 | File | Purpose |
 |------|---------|
 | `server.py` | Main server with all tools and platform logic |
-| `requirements.txt` | Python dependencies (google-genai, fastmcp, python-dotenv, yt-dlp, curl_cffi) |
+| `pyproject.toml` | Python dependencies and version; `uv.lock` pins them (google-genai, fastmcp, pydantic, python-dotenv, yt-dlp, curl-cffi) |
 | `.env` | API key configuration (GEMINI_API_KEY) |
 | `mcp-config.json` | Codex Desktop MCP server configuration |
 | `test_urls.py` | Test script for video analysis |
@@ -58,9 +58,10 @@ videos, audio) coverage.
 ## Development Notes
 
 - **SDK**: `google-genai` (NOT the older `google-generativeai` package).
-- **Default model**: `gemini-flash-latest` — alias that tracks the latest
-  stable Gemini Flash (currently Gemini 3 Flash). See `DEFAULT_MODEL` in
-  server.py. Override per-call via the `model` kwarg.
+- **Default models**: fast `gemini-3.8-flash`, deep (`detail="full"`) `gemini-4-argon`.
+  Both are Stable on https://aistudio.google.com/docs/models (checked 2026-11-05).
+  See `FAST_MODEL_FALLBACK` / `DEEP_MODEL_FALLBACK` in server.py. Override
+  per-call via the `model` kwarg.
 - **Transport**: stdio (for Codex Desktop integration).
 - **Temp files**: Always cleaned up after analysis in a `finally` block.
 - **Platform detection**: Regex-based URL pattern matching for YouTube,
