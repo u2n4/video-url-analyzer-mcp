@@ -1106,9 +1106,10 @@ def _check_download_size(fpath: str) -> str:
             os.remove(fpath)
         except OSError:
             pass
-        raise RuntimeError(
+        raise VideoAnalyzerError(
             f"Downloaded file too large: {size_mb:.1f} MB "
-            f"(limit: {MAX_DOWNLOAD_SIZE_MB} MB)"
+            f"(limit: {MAX_DOWNLOAD_SIZE_MB} MB)",
+            code="download_too_large",
         )
     return fpath
 
@@ -1125,9 +1126,10 @@ def _check_download_sizes(paths: list[str]) -> list[str]:
                 os.remove(p)
             except OSError:
                 pass
-        raise RuntimeError(
+        raise VideoAnalyzerError(
             f"Downloaded media too large: {total_mb:.1f} MB total "
-            f"(limit: {MAX_DOWNLOAD_SIZE_MB} MB)"
+            f"(limit: {MAX_DOWNLOAD_SIZE_MB} MB)",
+            code="download_too_large",
         )
     return paths
 
@@ -1490,7 +1492,8 @@ def _download_video(url: str) -> list[str]:
     if platform == "tiktok":
         raise VideoAnalyzerError(
             "No compatible TikTok MP4/H.264/H.265 format could be selected. "
-            "The video may only expose an unsupported ByteDance bvc2/bytevc2 stream.",
+            "The video may only expose an unsupported ByteDance bvc2/bytevc2 stream. "
+            f"Last yt-dlp error: {_short_tail(last_error, 300)}",
             code="no_compatible_format",
             details={
                 "selector": fmt_selector,
@@ -1504,6 +1507,14 @@ def _download_video(url: str) -> list[str]:
         f"Is the URL public and accessible?\n"
         f"Last error: {last_error[-500:]}"
     )
+
+
+def _delete_failed_upload(name: str) -> None:
+    """Best-effort delete of a Gemini file that never became ACTIVE."""
+    try:
+        _get_client().files.delete(name=name)
+    except Exception as exc:
+        logger.warning("Could not delete failed Gemini upload %s: %s", name, exc)
 
 
 def _upload_to_gemini(file_path: str):
@@ -1528,6 +1539,7 @@ def _upload_to_gemini(file_path: str):
         if uploaded.state and uploaded.state.name == "ACTIVE":
             break
         if uploaded.state and uploaded.state.name == "FAILED":
+            _delete_failed_upload(file_name)
             raise VideoAnalyzerError(
                 f"Gemini File processing failed: {uploaded.state}",
                 code="gemini_file_failed",
@@ -1540,6 +1552,7 @@ def _upload_to_gemini(file_path: str):
             logger.info("Still processing... (%d/%d)", retries, max_retries)
 
     if not uploaded.state or uploaded.state.name != "ACTIVE":
+        _delete_failed_upload(file_name)
         raise RuntimeError(
             f"File processing timed out after {max_retries * 2}s "
             f"(last state: {uploaded.state})."
@@ -1837,6 +1850,11 @@ def _moment_match_threshold(detail: str) -> float:
     return {"compact": 0.6, "standard": 0.5, "full": 0.4}.get(detail, 0.6)
 
 
+def _term_in_text(term: str, text: str) -> bool:
+    """Whole-word match, so the alias "auto" does not match "automatically"."""
+    return re.search(rf"\b{re.escape(term)}\b", text) is not None
+
+
 def _moment_matches_terms(moment: VideoMoment, terms: list[str], detail: str) -> bool:
     if moment.confidence < _moment_match_threshold(detail):
         return False
@@ -1845,7 +1863,7 @@ def _moment_matches_terms(moment: VideoMoment, terms: list[str], detail: str) ->
     haystack = _flatten_text(
         [moment.reason, moment.audio_evidence, moment.visual_evidence]
     ).lower()
-    return any(term in haystack for term in terms)
+    return any(_term_in_text(term, haystack) for term in terms)
 
 
 def _apply_strict_moment_filter(
@@ -1974,8 +1992,12 @@ def _load_video_context(video_id_or_url: str) -> SavedVideoContext | None:
         path = _context_path(video_id)
         if not path.exists():
             continue
-        data = json.loads(path.read_text(encoding="utf-8"))
-        ctx = SavedVideoContext.model_validate(data)
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+            ctx = SavedVideoContext.model_validate(data)
+        except Exception as exc:
+            logger.warning("Ignoring unreadable video context %s: %s", path, exc)
+            continue
         _ensure_context_quality(ctx)
         return ctx
 
@@ -1992,15 +2014,33 @@ def _load_video_context(video_id_or_url: str) -> SavedVideoContext | None:
     return None
 
 
+def _replace_with_retry(src: Path, dst: Path, attempts: int = 40) -> None:
+    """Atomically move src over dst.
+
+    Windows can refuse the replace briefly while an indexer, antivirus or an
+    open editor holds dst, so PermissionError is retried.
+    """
+    for attempt in range(1, attempts + 1):
+        try:
+            os.replace(src, dst)
+            return
+        except PermissionError:
+            if attempt == attempts:
+                raise
+            time.sleep(0.25)
+
+
 def _save_video_context(ctx: SavedVideoContext) -> str:
     """Persist a structured video context and return its path."""
     VIDEO_CONTEXT_DIR.mkdir(parents=True, exist_ok=True)
     _ensure_context_quality(ctx)
     path = _context_path(ctx.video_id)
-    path.write_text(
+    temp = path.with_name(f"{path.name}.tmp")
+    temp.write_text(
         json.dumps(ctx.model_dump(), indent=2, ensure_ascii=False),
         encoding="utf-8",
     )
+    _replace_with_retry(temp, path)
     logger.info("Video context saved to %s", path)
     return str(path)
 
@@ -2283,7 +2323,7 @@ def _score_context_segments(
         seen_segments.add(key)
 
         haystack = _flatten_text(segment).lower()
-        matches = [term for term in terms if term in haystack]
+        matches = [term for term in terms if _term_in_text(term, haystack)]
         max_ev_conf = max(
             [item.confidence for item in segment.evidence] + [segment.confidence]
         )
@@ -2311,7 +2351,7 @@ def _score_context_segments(
             score += 2.5
         elif (end_mode or last_mode) and term_grounded:
             score += min(2.0, end_seconds / max(1.0, max_end) * 2.0)
-        if any(term in " ".join(segment.entities + segment.objects).lower() for term in terms):
+        if any(_term_in_text(term, " ".join(segment.entities + segment.objects).lower()) for term in terms):
             score += 1.0
         if terms and not matches and ("where" in lowered or "image of" in lowered or "clip where" in lowered):
             score *= 0.35
@@ -2428,7 +2468,9 @@ def _is_within(path: Path, root: Path) -> bool:
 
 
 def _find_cached_source(video_id: str) -> Path | None:
-    source_dir = _source_dir(video_id)
+    source_dir = VIDEO_SOURCE_DIR / video_id
+    if not source_dir.is_dir():
+        return None
     for path in sorted(source_dir.glob("source.*")):
         if path.is_file() and path.stat().st_size > 0:
             return path
@@ -4540,7 +4582,7 @@ def do_get_video_frame(
                 output_path,
             )
         else:
-            source_path, _, _ = _ensure_video_source(video_id_or_url, force_refresh)
+            source_path, _, _ = _ensure_video_source(video_id_or_url, False)
             _run_ffmpeg_extract_frame(source_path, timestamp_seconds, output_path)
 
         _record_asset(
@@ -4695,7 +4737,7 @@ def do_get_video_clip(
                 output_path,
             )
         else:
-            source_path, _, _ = _ensure_video_source(video_id_or_url, force_refresh)
+            source_path, _, _ = _ensure_video_source(video_id_or_url, False)
             _run_ffmpeg_extract_clip(source_path, start_seconds, duration, output_path)
 
         _record_asset(
@@ -5260,8 +5302,16 @@ _BLOCKED_PATH_PATTERNS = re.compile(
 
 
 def _validate_file_path(fpath: str) -> bool:
-    """Return True if a file path is safe for writing."""
-    return not _BLOCKED_PATH_PATTERNS.search(fpath)
+    """Return True if a file path is safe for writing.
+
+    The patterns spell Windows locations with backslashes, so the path is also
+    checked with forward slashes turned into backslashes. Otherwise
+    C:/Users/x/AppData/Roaming/... would pass.
+    """
+    return not (
+        _BLOCKED_PATH_PATTERNS.search(fpath)
+        or _BLOCKED_PATH_PATTERNS.search(fpath.replace("/", "\\"))
+    )
 
 
 _BLOCKED_COMMANDS = re.compile(
@@ -5292,6 +5342,19 @@ _BLOCKED_COMMANDS = re.compile(
     r")",
     re.IGNORECASE,
 )
+
+
+def _split_command_line(cmd: str, windows: bool = os.name == "nt") -> list[str]:
+    """Split a command line into argv without a shell.
+
+    POSIX shlex treats backslash as an escape character, which removes the
+    separators from Windows paths. On Windows the quotes are kept while
+    splitting and removed from each token afterwards.
+    """
+    if not windows:
+        return shlex.split(cmd)
+    tokens = shlex.split(cmd, posix=False)
+    return [t[1:-1] if len(t) >= 2 and t[0] == t[-1] == '"' else t for t in tokens]
 
 
 def _validate_command(cmd: str) -> bool:
@@ -5642,7 +5705,7 @@ def do_execute_tutorial_steps(
                 continue
             try:
                 result = subprocess.run(
-                    shlex.split(cmd),
+                    _split_command_line(cmd),
                     shell=False,
                     capture_output=True,
                     text=True,
