@@ -243,10 +243,12 @@ logger = logging.getLogger("video-analyzer")
 #   2. ``GEMINI_FAST_MODEL`` / ``GEMINI_DEEP_MODEL`` env vars (see _resolve_model)
 #   3. ``VIDEO_ANALYZER_MODEL`` umbrella env var
 #   4. the hardcoded fallbacks below
-# ``gemini-flash-latest`` is kept as a documented stable fallback option but is
-# no longer the default.
-FAST_MODEL_FALLBACK = "gemini-3.5-flash"
-DEEP_MODEL_FALLBACK = "gemini-3.1-pro-preview"
+# Checked against https://aistudio.google.com/docs/models on 2026-11-05.
+# gemini-3.8-flash is Stable and is the Flash model that page recommends
+# for new projects. gemini-4-argon is Stable and is the page's latest,
+# most capable model (text, image, video, audio and PDF input).
+FAST_MODEL_FALLBACK = "gemini-3.8-flash"
+DEEP_MODEL_FALLBACK = "gemini-4-argon"
 _VIDEO_ANALYZER_MODEL_OVERRIDE = (
     os.environ.get("VIDEO_ANALYZER_MODEL", "").strip() or None
 )
@@ -272,14 +274,14 @@ def _thinking_config_for_model(
 ) -> types.ThinkingConfig | None:
     """Build model-family compatible thinking config.
 
-    Gemini 3 uses thinking_level. Gemini 2.5 rejects thinking_level and uses
+    Gemini 3 and 4 use thinking_level. Gemini 2.5 rejects thinking_level and uses
     thinking_budget instead.
     """
     from google.genai import types
 
     normalized = _model_id(model)
     name = thinking_name.strip().lower()
-    if normalized.startswith("gemini-3"):
+    if normalized.startswith(("gemini-3", "gemini-4")):
         return types.ThinkingConfig(thinking_level=types.ThinkingLevel(name.upper()))
     if normalized.startswith("gemini-2.5"):
         budget_by_level = {
@@ -488,7 +490,7 @@ def _build_analysis_config(model: str = DEFAULT_MODEL) -> types.GenerateContentC
     - MEDIA_RESOLUTION_HIGH: processes images at the highest supported
       resolution globally, so small on-screen text (captions, benchmark
       tables, fine details in carousel slides) is readable.
-    - Gemini 3 uses ThinkingLevel.HIGH; Gemini 2.5 falls back to dynamic
+    - Gemini 3 and 4 use ThinkingLevel.HIGH; Gemini 2.5 falls back to dynamic
       thinkingBudget because 2.5 rejects thinkingLevel.
     """
     from google.genai import types
@@ -4919,7 +4921,7 @@ def analyze_video(
     Args:
         url: The video URL (YouTube, TikTok, Instagram, or other).
         prompt: Custom analysis prompt. Defaults to comprehensive analysis.
-        model: Gemini model to use. Defaults to gemini-3.5-flash.
+        model: Gemini model to use. Defaults to gemini-3.8-flash.
 
     Returns:
         Analysis text (YouTube) or JSON with job_id (TikTok/Instagram).
@@ -4944,7 +4946,7 @@ def get_transcript(
     Args:
         url: The video URL (YouTube, TikTok, Instagram, or other).
         lang: Language hint (e.g., 'en', 'ar', 'auto'). Defaults to auto-detect.
-        model: Gemini model to use. Defaults to gemini-3.5-flash.
+        model: Gemini model to use. Defaults to gemini-3.8-flash.
 
     Returns:
         Transcript text (YouTube) or JSON with job_id (TikTok/Instagram).
@@ -4970,7 +4972,7 @@ def ask_about_video(
     Args:
         url: The video URL (YouTube, TikTok, Instagram, or other).
         question: Your question about the video.
-        model: Gemini model to use. Defaults to gemini-3.5-flash.
+        model: Gemini model to use. Defaults to gemini-3.8-flash.
 
     Returns:
         Answer text (YouTube) or JSON with job_id (TikTok/Instagram).
@@ -5695,7 +5697,7 @@ def watch_and_analyze(
     Args:
         url: Video URL (YouTube, TikTok, Instagram).
         lang: Language hint (e.g., 'en', 'ar', 'auto'). Defaults to auto-detect.
-        model: Gemini model to use. Defaults to gemini-3.5-flash.
+        model: Gemini model to use. Defaults to gemini-3.8-flash.
 
     Returns:
         JSON with tutorial analysis (YouTube) or JSON with job_id (TikTok/Instagram).

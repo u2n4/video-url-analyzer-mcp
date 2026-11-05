@@ -39,7 +39,7 @@ if exist "%~dp0.env.keys.local" (
 
 rem --- Safe defaults (do not override values already in the environment) ----
 if "%VIDEO_ANALYZER_MODE%"=="" set "VIDEO_ANALYZER_MODE=auto"
-if "%VIDEO_ANALYZER_MODEL%"=="" set "VIDEO_ANALYZER_MODEL=gemini-3.5-flash"
+if "%GEMINI_FAST_MODEL%"=="" set "GEMINI_FAST_MODEL=gemini-3.8-flash"
 
 rem --- Local checkout fallback: prepend src to PYTHONPATH if it exists ------
 if exist "%~dp0src\video_url_analyzer_mcp\server.py" (
@@ -78,7 +78,12 @@ del "%TEMP%\vurla_import.log" >nul 2>nul
 
 if "%_CHECK_MODE%"=="1" (
   echo [start.bat] check mode: VIDEO_ANALYZER_MODE=%VIDEO_ANALYZER_MODE%
-  echo [start.bat] check mode: VIDEO_ANALYZER_MODEL=%VIDEO_ANALYZER_MODEL%
+  echo [start.bat] check mode: GEMINI_FAST_MODEL=%GEMINI_FAST_MODEL%
+  if defined VIDEO_ANALYZER_MODEL (
+    echo [start.bat] check mode: VIDEO_ANALYZER_MODEL=%VIDEO_ANALYZER_MODEL%
+  ) else (
+    echo [start.bat] check mode: VIDEO_ANALYZER_MODEL is unset, so each role uses its own default
+  )
   if defined PYTHONPATH (
     echo [start.bat] check mode: PYTHONPATH=%PYTHONPATH%
   )
