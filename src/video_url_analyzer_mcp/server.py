@@ -5341,42 +5341,14 @@ _BLOCKED_COMMANDS = re.compile(
     r"|wget\s+[^|]*\|\s*"       # wget | (download & pipe)
     r"|nc\s+-[el]"              # netcat listen/exec (reverse shell)
     r"|ncat\s+-[el]"
+    r"|python[3]?\s+-c\s"       # inline code execution
+    r"|node\s+-e\s"
     r"|\beval\s"                # eval/exec
     r"|\bexec\s"
     r"|>\s*/dev/sd"             # overwrite disk device
     r"|Add-MpPreference"        # disable Windows Defender
     r"|Set-MpPreference"
     r")",
-    re.IGNORECASE,
-)
-
-# Inline-code and shell forms. Options may come before the code flag. A script
-# or module name ends the scan, so "python script.py -c x" and
-# "python -m pytest -c x.ini" are not matched.
-_CMD_OPT = r"(?:\s+-\S+(?:\s+(?!-)\S+)?)*?"
-_PY_OPT = r"(?:\s+-(?!m\b)\S+(?:\s+(?!-)\S+)?)*?"
-_INLINE_CODE_RULES = (
-    # python, python3.12, python.exe, pythonw, pypy, the py launcher; -c also in a cluster such as -uc
-    r"\b(?:python(?:w)?(?:\d+(?:\.\d+)*)?|pypy(?:\d+(?:\.\d+)*)?|py)(?:\.exe)?"
-    + _PY_OPT
-    + r"\s+-[a-zA-Z]*c\S*",
-    # node: -e, -p, --eval, --print
-    r"\bnode(?:js)?(?:\.exe)?" + _CMD_OPT + r"\s+(?:-[ep]\S*|--(?:eval|print)\b)",
-    # perl: -e, -E, and clusters such as -ne or -lne
-    r"\bperl(?:5(?:\.\d+)*)?(?:\.exe)?" + _CMD_OPT + r"\s+-[lnpaFi0-9]*[eE]\S*",
-    # ruby: -e, and clusters such as -ne
-    r"\bruby(?:\d+(?:\.\d+)*)?(?:\.exe)?" + _CMD_OPT + r"\s+-[lnpa]*e\S*",
-    # php: -r
-    r"\bphp(?:\d+(?:\.\d+)*)?(?:\.exe)?" + _CMD_OPT + r"\s+-r\S*",
-    # PowerShell: -Command and any prefix; -EncodedCommand and any prefix (but not -ex or -ep)
-    r"\b(?:pwsh|powershell)(?:\.exe)?" + _CMD_OPT + r"\s+-(?:c\S*|e(?![xp])\S*|en\S*)",
-    # cmd: /c and /k
-    r"\bcmd(?:\.exe)?(?:\s*/\S+)*?\s*/[ck]\S*",
-    # sh, bash, zsh: -c, and clusters such as -lc
-    r"\b(?:bash|sh|zsh)(?:\.exe)?" + _CMD_OPT + r"\s+-[a-zA-Z]*c\S*",
-)
-_INLINE_CODE_COMMANDS = re.compile(
-    "(" + "|".join(_INLINE_CODE_RULES) + ")",
     re.IGNORECASE,
 )
 
@@ -5393,20 +5365,88 @@ def _command_for_subprocess(cmd: str, windows: bool = os.name == "nt") -> str | 
     return shlex.split(cmd)
 
 
-def _validate_command(cmd: str) -> bool:
-    """Return True if a tutorial command passes the blocklist.
+# Tutorial command checks. The blocklist is a speed bump, not a security
+# boundary: human review of the steps before confirm=true is the real gate.
+MAX_COMMAND_CHARS = 4096
+_SHELL_PROGRAMS = frozenset(
+    {"sh", "bash", "zsh", "dash", "ksh", "fish", "cmd", "powershell", "pwsh"}
+)
+_PYTHON_PROGRAM = re.compile(r".*python[\d.]*[a-z]{0,2}|pypy[\d.]*|py")
+_SCRIPT_INTERPRETERS = frozenset({"node", "perl", "ruby", "php"})
+_PYTHON_MODULES = frozenset({"pip", "pytest", "venv"})
 
-    The blocklist is a speed bump, not a security boundary. Human review of the
-    steps before confirm=true is the real gate. The check runs on the raw text
-    and on the text with quotes removed, because the program receives the
-    command line after its own quote parsing.
+
+def _argv_windows(cmd: str) -> list[str]:
+    """Split a command line the way the Windows shell API does.
+
+    Raises ValueError if the platform is not Windows or the API fails.
     """
+    if sys.platform != "win32":
+        raise ValueError("Windows argument parsing needs Windows")
+    import ctypes
+    from ctypes import wintypes
+
+    shell32 = ctypes.WinDLL("shell32")
+    kernel32 = ctypes.WinDLL("kernel32")
+    command_line_to_argv = shell32.CommandLineToArgvW
+    command_line_to_argv.argtypes = [wintypes.LPCWSTR, ctypes.POINTER(ctypes.c_int)]
+    command_line_to_argv.restype = ctypes.POINTER(wintypes.LPWSTR)
+    local_free = kernel32.LocalFree
+    local_free.argtypes = [ctypes.c_void_p]
+    local_free.restype = ctypes.c_void_p
+
+    argc = ctypes.c_int(0)
+    argv = command_line_to_argv(cmd, ctypes.byref(argc))
+    if not argv:
+        raise ValueError("CommandLineToArgvW failed")
+    try:
+        return [argv[i] for i in range(argc.value)]
+    finally:
+        local_free(ctypes.cast(argv, ctypes.c_void_p))
+
+
+def _program_name(argv0: str) -> str:
+    """Basename of argv[0], lowercased, without a .exe suffix."""
+    base = argv0.replace("\\", "/").rsplit("/", 1)[-1].lower()
+    return base[:-4] if base.endswith(".exe") else base
+
+
+def _argv_is_allowed(argv: list[str]) -> bool:
+    """Decide from the argv the program will receive."""
+    # A quote left inside argv[0] (Windows keeps pe"rl") is not a program name.
+    if not argv or any(ch in argv[0] for ch in "\"'"):
+        return False
+    name = _program_name(argv[0])
+    if not name or name in _SHELL_PROGRAMS:
+        return False
+    args = argv[1:]
+    script_first = bool(args) and bool(args[0]) and not args[0].startswith("-")
+    if _PYTHON_PROGRAM.fullmatch(name):
+        is_module = len(args) >= 2 and args[0] == "-m" and args[1] in _PYTHON_MODULES
+        return script_first or is_module
+    if name in _SCRIPT_INTERPRETERS:
+        return script_first
+    return True
+
+
+def _validate_command(cmd: str, windows: bool = os.name == "nt") -> bool:
+    """Return True if a tutorial command passes the checks.
+
+    Order: a length cap, then the old blocklist on the raw text and on the text
+    with quotes removed, then the argv the program will receive. Shells are
+    refused. Script interpreters run only a script path, or python -m pip,
+    pytest or venv.
+    """
+    if len(cmd) > MAX_COMMAND_CHARS:
+        return False
     unquoted = cmd.replace('"', "").replace("'", "")
-    return not any(
-        pattern.search(text)
-        for text in (cmd, unquoted)
-        for pattern in (_BLOCKED_COMMANDS, _INLINE_CODE_COMMANDS)
-    )
+    if _BLOCKED_COMMANDS.search(cmd) or _BLOCKED_COMMANDS.search(unquoted):
+        return False
+    try:
+        argv = _argv_windows(cmd) if windows else shlex.split(cmd)
+    except ValueError:
+        return False
+    return _argv_is_allowed(argv)
 
 
 def _parse_gemini_json(text: str) -> dict:

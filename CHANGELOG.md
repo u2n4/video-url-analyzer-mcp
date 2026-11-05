@@ -17,7 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Reused bounded parallel Gemini Files uploads in structured non-YouTube analysis paths (`find_video_moments`, `analyze_video_segment`, and `prepare_video_context`) so multi-file media keeps the v1.5.4 speedup outside the basic analysis tool too.
 
 ### Fixed
-- The `execute_tutorial_steps` blocklist also checks the command with quotes removed, and blocks more inline-code forms: versioned and suffixed interpreters, options before `-c`, `perl -e`, `ruby -e`, `php -r`, `node -e`/`--eval`/`-p`, PowerShell `-Command` and `-EncodedCommand` prefixes, `cmd /c` and `/k`, and `sh`/`bash`/`zsh -c`. It is a speed bump, not a security boundary; review before `confirm=true` is the real gate.
+- `execute_tutorial_steps` refuses commands over 4096 characters, applies the old blocklist to the raw and quote-stripped text, and checks the argv the program will receive. Shells (sh, bash, zsh, dash, ksh, fish, cmd, powershell, pwsh) are refused. Script interpreters (python and its versions, py, pypy, node, perl, ruby, php) run only a script path, or `python -m pip`, `pytest` or `venv`. It is a speed bump, not a security boundary; review before `confirm=true` is the real gate.
 - The pyright errors in `server.py` and `slideshow.py` are fixed: the ThinkingLevel enum is passed instead of a string, and the download strategies list is annotated.
 - `execute_tutorial_steps` passes Windows commands to the program as typed, so backslashes and quoted arguments such as `--title="My Video"` survive. No shell is introduced.
 - Tutorial file writes refuse forward-slash spellings of protected Windows locations.
