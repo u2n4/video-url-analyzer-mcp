@@ -4,7 +4,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.6.0] - 2026-11-05
 
 ### Changed
 - Default models: fast `gemini-3.8-flash` (was `gemini-3.5-flash`) and deep (`detail="full"`) `gemini-4-argon` (was the preview `gemini-3.1-pro-preview`). Ids were checked against https://aistudio.google.com/docs/models on 2026-11-05. `start.bat` no longer sets a model id, so it overrides neither the deep default nor `VIDEO_ANALYZER_MODEL` from the environment or `.env`.
@@ -13,7 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dependencies: `fastmcp>=4.1.6,<5` (the version verified), `google-genai>=2.5.0,<3`, and `pydantic>=2.7,<3`, which the server imports directly. `uv.lock` is committed, and CI installs with `uv sync --locked`.
 - The CI lint gate runs ruff's correctness rules (E4, E7, E9, F). Ruff's default set reports 107 style and broad-except findings on this code, and those kept the lint step red before pyright and the tests ran.
 - The PyPI publish workflow runs the test job on the tagged commit, and it publishes only after that job passes. The workflow stays disabled in the repository settings.
-- `.mcp/server.json` matches version 1.5.4, and `GEMINI_API_KEY` is marked optional there.
+- `.mcp/server.json` matches version 1.6.0, and `GEMINI_API_KEY` is marked optional there.
 - Reused bounded parallel Gemini Files uploads in structured non-YouTube analysis paths (`find_video_moments`, `analyze_video_segment`, and `prepare_video_context`) so multi-file media keeps the v1.5.4 speedup outside the basic analysis tool too.
 
 ### Fixed

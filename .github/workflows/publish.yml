@@ -18,8 +18,6 @@
 # commit the tag points to and runs the same ruff, pyright and pytest steps as
 # CI. If any of them fails, nothing is built or published.
 #
-# The workflow is disabled in the repository settings. Enable it only for a
-# release.
 
 name: Publish to PyPI
 

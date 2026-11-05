@@ -352,6 +352,8 @@ BLOCKED_TUTORIAL_COMMANDS = [
     "git clone -qu x y",
     "git clone --conf=a=b y",
     "git clone ext::sh",
+    "git clone https://example.com/a.git a/../../b",
+    "git fetch a/../b",
     "git clone -- ext::sh",
     "npm install --script-shel=x",
     "git diff --output=x",

@@ -5473,10 +5473,16 @@ def _subcommand_problem(name: str, argv: list[str], index: int | None) -> str:
 
 
 def _is_remote_operand(token: str) -> bool:
-    """An https URL, or a bare remote or branch name: no colon and no path prefix."""
+    """An https URL, or a bare remote or branch name: no colon, path prefix or traversal."""
     if token.lower().startswith("https://"):
         return True
-    return bool(token) and token[0] not in "-/\\.~" and ":" not in token
+    return (
+        bool(token)
+        and token[0] not in "-/\\.~"
+        and ":" not in token
+        and "\\" not in token
+        and ".." not in token
+    )
 
 
 def _npm_run_problem(rest: list[str]) -> str | None:
