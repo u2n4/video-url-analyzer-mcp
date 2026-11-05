@@ -4,6 +4,8 @@ Unified MCP server for analyzing videos from YouTube, TikTok, and Instagram
 using Google's Gemini API with full audio + visual analysis.
 """
 
+from __future__ import annotations
+
 import hashlib
 import ipaddress
 import json
@@ -29,11 +31,9 @@ from urllib.error import URLError
 from dotenv import load_dotenv
 from fastmcp import FastMCP
 from fastmcp.utilities.types import Audio, Image
-from google import genai
-from google.genai import errors, types
 from platformdirs import user_data_dir
 from pydantic import BaseModel, Field
-from typing import Any, Literal, Optional, cast
+from typing import TYPE_CHECKING, Any, Literal, Optional, cast
 import yt_dlp
 from yt_dlp.networking.impersonate import ImpersonateTarget
 from yt_dlp.utils import DownloadError as YtDlpDownloadError
@@ -45,6 +45,10 @@ from .slideshow import (
     detect_post_type,
     download_slideshow,
 )
+
+if TYPE_CHECKING:
+    from google import genai
+    from google.genai import types
 
 DetailLevel = Literal["compact", "standard", "full"]
 
@@ -271,6 +275,8 @@ def _thinking_config_for_model(
     Gemini 3 uses thinking_level. Gemini 2.5 rejects thinking_level and uses
     thinking_budget instead.
     """
+    from google.genai import types
+
     normalized = _model_id(model)
     name = thinking_name.strip().lower()
     if normalized.startswith("gemini-3"):
@@ -313,6 +319,8 @@ def _ffmpeg_timeout(default: int) -> int:
 
 
 def _gemini_http_options() -> types.HttpOptions | None:
+    from google.genai import types
+
     timeout_seconds = _env_int("VIDEO_GEMINI_TIMEOUT", 0, minimum=0)
     if timeout_seconds <= 0:
         return None
@@ -321,14 +329,17 @@ def _gemini_http_options() -> types.HttpOptions | None:
 
 def _get_client() -> genai.Client:
     """Create the Gemini client only when a Gemini-backed tool is called."""
+    from google import genai
+
     global _client
     with _client_lock:
         if _client is None:
             key = os.environ.get("GEMINI_API_KEY", "").strip()
             if not key:
-                raise RuntimeError(
+                raise VideoAnalyzerError(
                     "GEMINI_API_KEY is not set. Configure it in .env or the "
-                    "shell environment before calling Gemini-backed tools."
+                    "shell environment before calling Gemini-backed tools.",
+                    code="gemini_api_key_missing",
                 )
             kwargs: dict[str, Any] = {"api_key": key}
             http_options = _gemini_http_options()
@@ -350,6 +361,8 @@ def _gemini_error_status_code(exc: Exception) -> int | None:
 
 
 def _is_retryable_gemini_error(exc: Exception) -> bool:
+    from google.genai import errors
+
     if isinstance(exc, errors.ClientError):
         return False
     code = _gemini_error_status_code(exc)
@@ -478,6 +491,8 @@ def _build_analysis_config(model: str = DEFAULT_MODEL) -> types.GenerateContentC
     - Gemini 3 uses ThinkingLevel.HIGH; Gemini 2.5 falls back to dynamic
       thinkingBudget because 2.5 rejects thinkingLevel.
     """
+    from google.genai import types
+
     kwargs: dict[str, Any] = {
         "media_resolution": types.MediaResolution.MEDIA_RESOLUTION_HIGH,
     }
@@ -1729,6 +1744,8 @@ def _build_structured_config(
     min_output_tokens: Optional[int] = None,
 ) -> types.GenerateContentConfig:
     """Build structured JSON config for the v1.2.0 tools."""
+    from google.genai import types
+
     settings = _detail_settings(detail)
     max_output_tokens = settings["max_output_tokens"]
     if min_output_tokens is not None:
@@ -3387,6 +3404,8 @@ def do_prepare_slideshow_assets(
 
 def _analyze_youtube(url: str, prompt: str, model: str) -> str:
     """Analyze a YouTube video directly via Gemini (no download)."""
+    from google.genai import types
+
     normalized_url = _normalize_youtube_url(url)
     logger.info("Analyzing YouTube video directly: %s (model: %s)", normalized_url, model)
 
@@ -3589,6 +3608,8 @@ def do_find_video_moments(
     return_full_text: bool,
 ) -> str:
     """Find semantic video moments with Gemini structured output."""
+    from google.genai import types
+
     try:
         validate_url(url)
         settings = _detail_settings(detail)
@@ -3706,6 +3727,8 @@ def do_analyze_video_segment(
     return_full_text: bool,
 ) -> str:
     """Analyze a selected video segment with Gemini structured output."""
+    from google.genai import types
+
     fallback_warning = (
         "Server-side video_metadata clipping was not available for this "
         "uploaded file; used prompt-based segment focus fallback."
@@ -3854,6 +3877,8 @@ def do_prepare_video_context(
     model: Optional[str],
     chunk_seconds: int,
 ) -> str:
+    from google.genai import types
+
     """Analyze a whole video once and save a structured local context."""
     gemini_called = False
     try:
@@ -4239,8 +4264,9 @@ def do_delete_video_context(video_id_or_url: str) -> str:
 def _known_video_ids() -> set[str]:
     ids: set[str] = set()
     ids.update(path.stem for path in VIDEO_CONTEXT_DIR.glob("*.json") if path.is_file())
-    ids.update(path.name for path in VIDEO_SOURCE_DIR.iterdir() if path.is_dir())
-    ids.update(path.name for path in VIDEO_ASSET_DIR.iterdir() if path.is_dir())
+    for root in (VIDEO_SOURCE_DIR, VIDEO_ASSET_DIR):
+        if root.is_dir():
+            ids.update(path.name for path in root.iterdir() if path.is_dir())
     return {re.sub(r"[^a-zA-Z0-9_-]", "", item) for item in ids if item}
 
 
