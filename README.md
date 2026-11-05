@@ -35,7 +35,7 @@
   <img src="https://raw.githubusercontent.com/u2n4/video-url-analyzer-mcp/main/assets/features.png" alt="Features — Analyze, Transcript, Ask" width="80%">
 </p>
 
-v1.5.4 exposes **18 MCP tools**:
+v1.6.0 exposes **18 MCP tools**:
 
 | Tool | What it does |
 |------|-------------|
