@@ -369,7 +369,7 @@ BLOCKED_TUTORIAL_COMMANDS = [
     "pip install -- x",
     "npm install -- x",
     "npm test -- x",
-    # remote operands are https URLs or bare names
+    # remote operands: https URLs with a host, or bare names, with no '..' or backslash
     "git fetch origin main:main",
     "git clone git@github.com:a/b.git",
     "git clone ssh://host/x y",
@@ -377,6 +377,14 @@ BLOCKED_TUTORIAL_COMMANDS = [
     "git clone ../x y",
     "git clone /tmp/x y",
     "git pull -- .hidden",
+    # clone: an https repository with a host, then one plain directory name
+    "git clone https://example.com/a.git https://x/../../b",
+    "git clone https://example.com/a.git a/b",
+    "git clone https://example.com/a.git ..",
+    "git clone name",
+    "git clone https://[1 mydir",
+    "git fetch https://example.com/x/../../y",
+    "git fetch https:///x",
     # npm run: script name, then optionally "--" and the script's arguments
     "npm run",
     "npm run build extra",
@@ -412,6 +420,7 @@ SAFE_TUTORIAL_COMMANDS = [
     "git add .",
     "git commit -m message",
     "git fetch origin",
+    "git fetch origin main",
     "git pull origin main",
     "npm ci",
     "npm test",
@@ -422,6 +431,7 @@ SAFE_TUTORIAL_COMMANDS = [
     "git clone --depth 1 https://github.com/a/b.git",
     "git clone -b main https://github.com/a/b.git",
     "git clone --single-branch https://github.com/a/b.git mydir",
+    "git clone https://example.com/a.git mydir",
     "git fetch --all --tags --prune",
     "git pull --rebase origin main",
     "git pull --ff-only origin main",
@@ -640,6 +650,9 @@ def test_environment_entry_that_is_a_path_never_matches(monkeypatch):
         ("git diff --output=x", "--output=x"),
         ("git log --ext-diff", "--ext-diff"),
         ("git fetch -u origin", "-u"),
+        ("git clone name", "name"),
+        ("git clone https://example.com/a.git a/b", "a/b"),
+        ("git clone https://example.com/a.git ..", ".."),
     ],
 )
 def test_refusal_names_the_rejected_option(cmd, rejected):
@@ -664,3 +677,11 @@ def test_arguments_after_double_dash_are_operands(cmd):
 def test_option_matching_is_exact_not_by_prefix():
     assert _refusal("git clone --depth 1 https://github.com/a/b.git") is None
     assert _refusal("git clone --depth=1 https://github.com/a/b.git") is not None
+
+
+@pytest.mark.parametrize(
+    "token",
+    ["https://example.com/a\\b", "https://example.com/a/../b", "https:///x", "https://[1"],
+)
+def test_remote_operand_refuses_backslash_traversal_and_bad_host(token):
+    assert server._is_remote_operand(token) is False

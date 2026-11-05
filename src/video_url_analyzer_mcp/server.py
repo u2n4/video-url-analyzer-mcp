@@ -24,7 +24,7 @@ import uuid
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from pathlib import Path
-from urllib.parse import urlparse, parse_qs
+from urllib.parse import urlparse, parse_qs, urlsplit
 from urllib.request import Request as UrllibRequest
 from urllib.request import urlopen as urllib_urlopen
 from urllib.error import URLError
@@ -5473,16 +5473,37 @@ def _subcommand_problem(name: str, argv: list[str], index: int | None) -> str:
 
 
 def _is_remote_operand(token: str) -> bool:
-    """An https URL, or a bare remote or branch name: no colon, path prefix or traversal."""
+    """An https URL with a host, or a bare remote or branch name, with no traversal or backslash."""
+    if ".." in token or "\\" in token:
+        return False
     if token.lower().startswith("https://"):
-        return True
-    return (
-        bool(token)
-        and token[0] not in "-/\\.~"
-        and ":" not in token
-        and "\\" not in token
-        and ".." not in token
-    )
+        try:
+            return bool(urlsplit(token).hostname)
+        except ValueError:
+            return False
+    return bool(token) and token[0] not in "-/\\.~" and ":" not in token
+
+
+def _is_clone_destination(token: str) -> bool:
+    """One plain directory name: no separator or colon, and no leading dot or dash."""
+    return bool(token) and not any(ch in token for ch in "/\\:") and token[0] not in ".-"
+
+
+def _remote_operand_problem(sub: str, position: int, token: str) -> str | None:
+    """Why a clone, fetch or pull operand is refused. position counts operands from 0."""
+    if not _is_remote_operand(token):
+        return (
+            f"operand '{token[:60]}' must be an https URL with a host or a bare name, "
+            "with no '..' or backslash"
+        )
+    if sub == "clone" and position == 0 and not token.lower().startswith("https://"):
+        return f"clone repository '{token[:60]}' must be an https:// URL"
+    if sub == "clone" and position == 1 and not _is_clone_destination(token):
+        return (
+            f"clone destination '{token[:60]}' must be one plain directory name, "
+            "with no '/', backslash or ':' and no leading '.' or '-'"
+        )
+    return None
 
 
 def _npm_run_problem(rest: list[str]) -> str | None:
@@ -5515,6 +5536,7 @@ def _options_problem(name: str, argv: list[str], index: int) -> str | None:
                     f"(contains '{marker}')"
                 )
     operands_only = False
+    operands = 0
     i = 0
     while i < len(rest):
         token = rest[i]
@@ -5531,8 +5553,11 @@ def _options_problem(name: str, argv: list[str], index: int) -> str | None:
                 if i + 1 >= len(rest):
                     return f"option '{token[:60]}' needs a value"
                 i += 1
-        elif remote and not _is_remote_operand(token):
-            return f"operand '{token[:60]}' is not an https URL or a bare name"
+        elif remote:
+            problem = _remote_operand_problem(sub, operands, token)
+            if problem is not None:
+                return problem
+            operands += 1
         i += 1
     return None
 
