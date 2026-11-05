@@ -5369,6 +5369,30 @@ _SHELL_PROGRAMS = frozenset(
 _PYTHON_PROGRAMS = frozenset({"python", "python3", "py"})
 _SCRIPT_FIRST_PROGRAMS = _PYTHON_PROGRAMS | {"node"}
 _PYTHON_MODULES = frozenset({"pip", "pytest", "venv"})
+# The subcommands each program may run; the first argument must be one of them.
+_SUBCOMMANDS = {
+    "git": frozenset(
+        {
+            "clone",
+            "fetch",
+            "pull",
+            "status",
+            "log",
+            "diff",
+            "checkout",
+            "switch",
+            "branch",
+            "add",
+            "commit",
+        }
+    ),
+    "npm": frozenset({"install", "ci", "run", "test"}),
+    "pip": frozenset({"install", "list", "show"}),
+    "pip3": frozenset({"install", "list", "show"}),
+}
+_GIT_NETWORK_SUBCOMMANDS = frozenset({"clone", "fetch", "pull"})
+_GIT_REFUSED_ARG_PREFIXES = ("-c", "--config", "-u", "--upload-pack")
+_NPM_REFUSED_ARG_PREFIXES = ("--script-shell",)
 
 
 def _argv_windows(cmd: str) -> list[str]:
@@ -5400,32 +5424,62 @@ def _argv_windows(cmd: str) -> list[str]:
         local_free(ctypes.cast(argv, ctypes.c_void_p))
 
 
-def _program_name(argv0: str, windows: bool = os.name == "nt") -> str:
-    """Basename of argv[0] under the platform's path rules, lowercased, without .exe.
-
-    Windows accepts either slash as a separator. POSIX allows a backslash inside
-    a file name, so only '/' separates there.
-    """
-    parts = re.split(r"[\\/]", argv0) if windows else argv0.split("/")
-    base = parts[-1].lower()
-    return base[:-4] if base.endswith(".exe") else base
+def _program_name(argv0: str) -> str:
+    """argv[0] lowercased, without one .exe suffix. Only bare names reach this."""
+    name = argv0.lower()
+    return name[:-4] if name.endswith(".exe") else name
 
 
-def _allowed_programs(windows: bool) -> frozenset[str]:
+def _allowed_programs() -> frozenset[str]:
     """The default allowlist plus the names in ALLOWED_PROGRAMS_ENV, never shells."""
     listed = os.environ.get(ALLOWED_PROGRAMS_ENV, "").split(",")
-    extra = {_program_name(part.strip(), windows) for part in listed if part.strip()}
+    extra = {_program_name(part.strip()) for part in listed if part.strip()}
     return (DEFAULT_ALLOWED_PROGRAMS | extra) - _SHELL_PROGRAMS
+
+
+def _listed(name: str) -> str:
+    """The subcommands a program may run, for messages."""
+    return ", ".join(sorted(_SUBCOMMANDS[name]))
+
+
+def _subcommand_index(name: str, argv: list[str]) -> int | None:
+    """Index of the subcommand in argv. For git, only -C <path> may come before it."""
+    index = 1
+    if name == "git":
+        while index < len(argv) and argv[index] == "-C":
+            index += 2
+    return index if index < len(argv) else None
+
+
+def _subcommand_problem(name: str, argv: list[str], index: int | None) -> str:
+    """Why the argument at index is not an allowed subcommand of name."""
+    if index is None:
+        return f"needs one of these {name} subcommands: {_listed(name)}"
+    return (
+        f"runs only these {name} subcommands: {_listed(name)}; "
+        f"'{argv[index]}' is not one"
+    )
 
 
 def _argument_refusal(name: str, argv: list[str]) -> str | None:
     """Return why an allowed program's arguments are refused, or None."""
     args = argv[1:]
-    if name == "git":
-        if any(arg.startswith(("-c", "--config-env")) for arg in args):
-            return "refuses -c and --config-env"
+    if name in _SUBCOMMANDS:
+        index = _subcommand_index(name, argv)
+        if index is None or argv[index] not in _SUBCOMMANDS[name]:
+            return _subcommand_problem(name, argv, index)
+        if name == "git" and argv[index] in _GIT_NETWORK_SUBCOMMANDS:
+            if any(arg.startswith(_GIT_REFUSED_ARG_PREFIXES) for arg in argv[index + 1 :]):
+                return f"refuses -c, --config, -u and --upload-pack for '{argv[index]}'"
+        if name == "npm" and any(arg.startswith(_NPM_REFUSED_ARG_PREFIXES) for arg in args):
+            return "refuses --script-shell"
         return None
     if name in _PYTHON_PROGRAMS and len(args) >= 2 and args[0] == "-m":
+        if args[1] == "pip":
+            index = 3 if len(argv) > 3 else None
+            if index is None or argv[index] not in _SUBCOMMANDS["pip"]:
+                return _subcommand_problem("pip", argv, index)
+            return None
         if args[1] in _PYTHON_MODULES:
             return None
     if name in _SCRIPT_FIRST_PROGRAMS:
@@ -5463,8 +5517,9 @@ def _shown_program(cmd: str) -> str:
 
 def _refusal(program: str, why: str) -> tuple[None, str]:
     """A refusal that always names the program and the allowlist variable."""
+    shown = program[:60]
     return None, (
-        f"program '{program}': {why}; {ALLOWED_PROGRAMS_ENV} does not change this"
+        f"program '{shown}': {why}; {ALLOWED_PROGRAMS_ENV} does not change this"
     )
 
 
@@ -5476,8 +5531,8 @@ def _vet_command(
     Returns (argv, None) when the command may run. argv is exactly what
     subprocess receives. Returns (None, reason) when the command is refused.
     Order: non-text input, the length cap (before any regex), one parse, the
-    program name, the argument rules, then the old blocklist on the raw and
-    quote-stripped text.
+    quote check, the bare-name check, the program name, the subcommand and
+    argument rules, then the old blocklist on the raw and quote-stripped text.
     """
     if not isinstance(cmd, str):
         return _refusal("unknown", "command is not text")
@@ -5493,13 +5548,15 @@ def _vet_command(
         return _refusal("unknown", "command is empty")
     if not _program_token_is_plain(cmd):
         return _refusal(_shown_program(cmd), "the quotes do not wrap all of the program name")
-    name = _program_name(argv[0], windows)
+    if "/" in argv[0] or "\\" in argv[0]:
+        return _refusal(argv[0], "only bare program names run, not paths")
+    name = _program_name(argv[0])
     if name in _SHELL_PROGRAMS:
         return None, (
             f"program '{name}' is a shell and is never allowed, even when listed in "
             f"{ALLOWED_PROGRAMS_ENV}"
         )
-    if name not in _allowed_programs(windows):
+    if name not in _allowed_programs():
         return None, (
             f"program '{name}' is not allowed; to allow it, add it to "
             f"{ALLOWED_PROGRAMS_ENV}"
