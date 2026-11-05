@@ -347,6 +347,39 @@ BLOCKED_TUTORIAL_COMMANDS = [
     "/tmp/python script.py",
     "bin/npm install",
     r"C:\x\python.exe script.py",
+    # exact option lists: abbreviations, bundled and attached forms, unlisted options
+    "git fetch --upload-p=x .",
+    "git clone -qu x y",
+    "git clone --conf=a=b y",
+    "git clone ext::sh",
+    "git clone -- ext::sh",
+    "npm install --script-shel=x",
+    "git diff --output=x",
+    "git log --ext-diff",
+    "git fetch -u origin",
+    "git clone --depth=1 https://github.com/a/b.git",
+    "git fetch --depth 1 origin",
+    "git commit --amend",
+    "git checkout -f main",
+    "git add --patch",
+    "pip install --index-url x y",
+    "pip install -e .",
+    "pip install -- x",
+    "npm install -- x",
+    "npm test -- x",
+    # remote operands are https URLs or bare names
+    "git fetch origin main:main",
+    "git clone git@github.com:a/b.git",
+    "git clone ssh://host/x y",
+    "git fetch file:///tmp/x",
+    "git clone ../x y",
+    "git clone /tmp/x y",
+    "git pull -- .hidden",
+    # npm run: script name, then optionally "--" and the script's arguments
+    "npm run",
+    "npm run build extra",
+    "npm run build --foo",
+    "npm run --script-shell=x build",
 ]
 
 SAFE_TUTORIAL_COMMANDS = [
@@ -383,6 +416,32 @@ SAFE_TUTORIAL_COMMANDS = [
     "pip list",
     "pip show requests",
     "python -m pip list",
+    "git clone https://github.com/a/b.git",
+    "git clone --depth 1 https://github.com/a/b.git",
+    "git clone -b main https://github.com/a/b.git",
+    "git clone --single-branch https://github.com/a/b.git mydir",
+    "git fetch --all --tags --prune",
+    "git pull --rebase origin main",
+    "git pull --ff-only origin main",
+    "git checkout -b feature",
+    "git switch -c feature",
+    'git commit -m "x"',
+    "git log -n 5 --oneline",
+    "git diff --cached --stat",
+    "git status -s",
+    "git add -A",
+    "git add --all",
+    "git add -- -weird",
+    "git fetch -- origin",
+    "git commit -m x -- file",
+    "npm install -D x",
+    "npm install --save-dev x",
+    "npm run build -- --script-shell=example",
+    "npm run build",
+    "npm test",
+    "pip install -U x",
+    "pip install --upgrade x",
+    "pip install -r requirements.txt",
 ]
 
 @pytest.fixture(autouse=True)
@@ -566,3 +625,40 @@ def test_environment_program_does_not_change_subcommand_rules(monkeypatch):
 def test_environment_entry_that_is_a_path_never_matches(monkeypatch):
     monkeypatch.setenv(server.ALLOWED_PROGRAMS_ENV, "./ffmpeg")
     assert _refusal("./ffmpeg -version") is not None
+
+
+@pytest.mark.parametrize(
+    ("cmd", "rejected"),
+    [
+        ("git fetch --upload-p=x .", "--upload-p=x"),
+        ("git clone -qu x y", "-qu"),
+        ("git clone --conf=a=b y", "--conf=a=b"),
+        ("git clone ext::sh", "ext::sh"),
+        ("npm install --script-shel=x", "--script-shel=x"),
+        ("git diff --output=x", "--output=x"),
+        ("git log --ext-diff", "--ext-diff"),
+        ("git fetch -u origin", "-u"),
+    ],
+)
+def test_refusal_names_the_rejected_option(cmd, rejected):
+    reason = _refusal(cmd)
+    assert reason is not None
+    assert f"'{rejected}'" in reason
+
+
+@pytest.mark.parametrize(
+    "cmd",
+    [
+        "git add -- -weird",
+        "git fetch -- origin",
+        "git commit -m x -- file",
+        "npm run build -- --script-shell=example",
+    ],
+)
+def test_arguments_after_double_dash_are_operands(cmd):
+    assert _refusal(cmd) is None
+
+
+def test_option_matching_is_exact_not_by_prefix():
+    assert _refusal("git clone --depth 1 https://github.com/a/b.git") is None
+    assert _refusal("git clone --depth=1 https://github.com/a/b.git") is not None

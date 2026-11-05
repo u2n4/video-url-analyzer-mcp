@@ -5369,30 +5369,41 @@ _SHELL_PROGRAMS = frozenset(
 _PYTHON_PROGRAMS = frozenset({"python", "python3", "py"})
 _SCRIPT_FIRST_PROGRAMS = _PYTHON_PROGRAMS | {"node"}
 _PYTHON_MODULES = frozenset({"pip", "pytest", "venv"})
-# The subcommands each program may run; the first argument must be one of them.
-_SUBCOMMANDS = {
-    "git": frozenset(
-        {
-            "clone",
-            "fetch",
-            "pull",
-            "status",
-            "log",
-            "diff",
-            "checkout",
-            "switch",
-            "branch",
-            "add",
-            "commit",
-        }
-    ),
-    "npm": frozenset({"install", "ci", "run", "test"}),
-    "pip": frozenset({"install", "list", "show"}),
-    "pip3": frozenset({"install", "list", "show"}),
+# The subcommands each program may run, and the exact options each one accepts.
+# An option maps to True when it takes the next argument as its value. Matching
+# is exact: an abbreviation, a bundled or attached form, or an unlisted option is
+# refused. For git, a standalone "--" ends option checking.
+_PIP_SUBCOMMANDS: dict[str, dict[str, bool]] = {
+    "install": {"-r": True, "-U": False, "--upgrade": False},
+    "list": {},
+    "show": {},
 }
-_GIT_NETWORK_SUBCOMMANDS = frozenset({"clone", "fetch", "pull"})
-_GIT_REFUSED_ARG_PREFIXES = ("-c", "--config", "-u", "--upload-pack")
-_NPM_REFUSED_ARG_PREFIXES = ("--script-shell",)
+_SUBCOMMANDS: dict[str, dict[str, dict[str, bool]]] = {
+    "git": {
+        "clone": {"--depth": True, "--branch": True, "-b": True, "--single-branch": False},
+        "fetch": {"--all": False, "--tags": False, "--prune": False},
+        "pull": {"--rebase": False, "--ff-only": False},
+        "checkout": {"-b": True},
+        "switch": {"-c": True},
+        "commit": {"-m": True},
+        "add": {"-A": False, "--all": False},
+        "log": {"--oneline": False, "-n": True},
+        "diff": {"--stat": False, "--cached": False},
+        "status": {"-s": False, "--short": False},
+        "branch": {"-a": False},
+    },
+    "npm": {
+        "install": {"-D": False, "--save-dev": False},
+        "ci": {},
+        "test": {},
+        "run": {},
+    },
+    "pip": _PIP_SUBCOMMANDS,
+    "pip3": _PIP_SUBCOMMANDS,
+}
+_GIT_REMOTE_SUBCOMMANDS = frozenset({"clone", "fetch", "pull"})
+# Text that may not appear in any argument of those subcommands (case-insensitive).
+_REMOTE_FORBIDDEN = ("::", "file:", "ssh:", "ext:")
 
 
 def _argv_windows(cmd: str) -> list[str]:
@@ -5461,6 +5472,65 @@ def _subcommand_problem(name: str, argv: list[str], index: int | None) -> str:
     )
 
 
+def _is_remote_operand(token: str) -> bool:
+    """An https URL, or a bare remote or branch name: no colon and no path prefix."""
+    if token.lower().startswith("https://"):
+        return True
+    return bool(token) and token[0] not in "-/\\.~" and ":" not in token
+
+
+def _npm_run_problem(rest: list[str]) -> str | None:
+    """npm run takes a script name, then optionally "--" and the script's own arguments."""
+    if not rest or not rest[0] or rest[0].startswith("-"):
+        return "needs a script name first"
+    tail = rest[1:]
+    if tail and tail[0] != "--":
+        return (
+            f"'{tail[0][:60]}' is not allowed after the script name; "
+            "only '--' may follow it"
+        )
+    return None
+
+
+def _options_problem(name: str, argv: list[str], index: int) -> str | None:
+    """Return why the arguments after the subcommand at index are refused, or None."""
+    sub = argv[index]
+    rest = argv[index + 1 :]
+    if name == "npm" and sub == "run":
+        return _npm_run_problem(rest)
+    options = _SUBCOMMANDS[name][sub]
+    remote = name == "git" and sub in _GIT_REMOTE_SUBCOMMANDS
+    if remote:
+        for token in rest:
+            marker = next((m for m in _REMOTE_FORBIDDEN if m in token.lower()), None)
+            if marker is not None:
+                return (
+                    f"operand '{token[:60]}' uses a transport that is not allowed "
+                    f"(contains '{marker}')"
+                )
+    operands_only = False
+    i = 0
+    while i < len(rest):
+        token = rest[i]
+        if not operands_only and name == "git" and token == "--":
+            operands_only = True
+        elif not operands_only and token.startswith("-"):
+            if token not in options:
+                allowed = ", ".join(sorted(options)) or "none"
+                return (
+                    f"option '{token[:60]}' is not allowed for '{sub}'; "
+                    f"allowed options: {allowed}"
+                )
+            if options[token]:
+                if i + 1 >= len(rest):
+                    return f"option '{token[:60]}' needs a value"
+                i += 1
+        elif remote and not _is_remote_operand(token):
+            return f"operand '{token[:60]}' is not an https URL or a bare name"
+        i += 1
+    return None
+
+
 def _argument_refusal(name: str, argv: list[str]) -> str | None:
     """Return why an allowed program's arguments are refused, or None."""
     args = argv[1:]
@@ -5468,18 +5538,13 @@ def _argument_refusal(name: str, argv: list[str]) -> str | None:
         index = _subcommand_index(name, argv)
         if index is None or argv[index] not in _SUBCOMMANDS[name]:
             return _subcommand_problem(name, argv, index)
-        if name == "git" and argv[index] in _GIT_NETWORK_SUBCOMMANDS:
-            if any(arg.startswith(_GIT_REFUSED_ARG_PREFIXES) for arg in argv[index + 1 :]):
-                return f"refuses -c, --config, -u and --upload-pack for '{argv[index]}'"
-        if name == "npm" and any(arg.startswith(_NPM_REFUSED_ARG_PREFIXES) for arg in args):
-            return "refuses --script-shell"
-        return None
+        return _options_problem(name, argv, index)
     if name in _PYTHON_PROGRAMS and len(args) >= 2 and args[0] == "-m":
         if args[1] == "pip":
             index = 3 if len(argv) > 3 else None
             if index is None or argv[index] not in _SUBCOMMANDS["pip"]:
                 return _subcommand_problem("pip", argv, index)
-            return None
+            return _options_problem("pip", argv, index)
         if args[1] in _PYTHON_MODULES:
             return None
     if name in _SCRIPT_FIRST_PROGRAMS:
