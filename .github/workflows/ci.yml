@@ -21,26 +21,17 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
 
-      - name: Install project
-        run: uv sync --all-extras --dev || uv pip install -e .
+      - name: Install project from uv.lock
+        run: uv sync --locked --all-extras --dev
 
       - name: Lint with ruff
-        run: uv tool run ruff check src/
+        run: uv run ruff check src/
 
       - name: Type check with pyright
-        # `uv run --with pyright` runs pyright with project deps available so
-        # imports resolve correctly. Plain `uv tool run pyright` runs in an
-        # isolated env where the project's own deps are invisible.
-        run: uv run --with pyright pyright src/
+        run: uv run pyright src/
 
-      - name: Run tests (if present)
-        run: |
-          if [ -d tests ]; then
-            uv tool install pytest
-            uv tool run pytest -q
-          else
-            echo "No tests/ directory; skipping pytest"
-          fi
+      - name: Run tests
+        run: uv run pytest -q
 
       - name: Build wheel + sdist
         run: uv build

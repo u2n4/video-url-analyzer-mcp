@@ -803,7 +803,7 @@ def _model_id(model: str) -> str:
 def _thinking_config_for_model(model: str) -> types.ThinkingConfig | None:
     normalized = _model_id(model)
     if normalized.startswith("gemini-3"):
-        return types.ThinkingConfig(thinking_level="high")
+        return types.ThinkingConfig(thinking_level=types.ThinkingLevel.HIGH)
     if normalized.startswith("gemini-2.5"):
         return types.ThinkingConfig(thinking_budget=-1)
     return None
