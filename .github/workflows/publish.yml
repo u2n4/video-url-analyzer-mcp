@@ -13,6 +13,13 @@
 # Then to release: bump version, push a tag matching v*.*.* (e.g. `git tag v1.5.4
 # && git push origin v1.5.4`). This workflow builds and publishes automatically
 # via short-lived OIDC credentials -- no stored token anywhere.
+#
+# Gate: the publish job needs the test job. The test job checks out the exact
+# commit the tag points to and runs the same ruff, pyright and pytest steps as
+# CI. If any of them fails, nothing is built or published.
+#
+# The workflow is disabled in the repository settings. Enable it only for a
+# release.
 
 name: Publish to PyPI
 
@@ -22,7 +29,36 @@ on:
       - "v*.*.*"
 
 jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.10", "3.11", "3.12", "3.13"]
+
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.sha }}
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install project from uv.lock
+        run: uv sync --locked --all-extras --dev
+
+      - name: Lint with ruff
+        run: uv run ruff check src/
+
+      - name: Type check with pyright
+        run: uv run pyright src/
+
+      - name: Run tests
+        run: uv run pytest -q
+
   publish:
+    needs: test
     runs-on: ubuntu-latest
     environment: pypi
     permissions:
@@ -31,6 +67,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.sha }}
 
       - name: Install uv
         uses: astral-sh/setup-uv@v6
