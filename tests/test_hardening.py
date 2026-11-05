@@ -51,6 +51,31 @@ def test_unreadable_saved_context_is_skipped(tmp_path, monkeypatch):
     assert server._load_video_context("abc123xyz") is None
 
 
+def test_context_temp_paths_are_unique_and_outside_the_json_glob(tmp_path):
+    target = tmp_path / "abc123xyz.json"
+    first = server._unique_temp_path(target)
+    second = server._unique_temp_path(target)
+    assert first != second
+    assert first.parent == tmp_path
+    assert first.suffix == ".tmp"
+    assert not first.match("*.json")
+    assert not second.match("*.json")
+
+
+def test_failed_context_save_leaves_no_temp_file(tmp_path, monkeypatch):
+    monkeypatch.setattr(server, "VIDEO_CONTEXT_DIR", tmp_path)
+    monkeypatch.setattr(server, "_ensure_context_quality", lambda ctx: None)
+
+    def refuse_replace(src, dst, attempts=40):
+        raise OSError("replace refused")
+
+    monkeypatch.setattr(server, "_replace_with_retry", refuse_replace)
+    ctx = SimpleNamespace(video_id="abc123xyz", model_dump=lambda: {"video_id": "abc123xyz"})
+    with pytest.raises(OSError, match="replace refused"):
+        server._save_video_context(ctx)
+    assert list(tmp_path.iterdir()) == []
+
+
 def test_replace_with_retry_moves_file_over_destination(tmp_path):
     src = tmp_path / "ctx.json.tmp"
     dst = tmp_path / "ctx.json"

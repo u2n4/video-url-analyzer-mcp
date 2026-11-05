@@ -20,7 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The pyright errors in `server.py` and `slideshow.py` are fixed: the ThinkingLevel enum is passed instead of a string, and the download strategies list is annotated.
 - `execute_tutorial_steps` keeps backslashes in Windows command paths. No shell is introduced.
 - Tutorial file writes refuse forward-slash spellings of protected Windows locations.
-- An unreadable saved context no longer breaks lookups. Saved contexts are written through a temp file and replaced atomically.
+- An unreadable saved context no longer breaks lookups. Saved contexts are written through a temp file that is unique to each save and replaced atomically, and a failed save removes its temp file.
 - `list_video_sources` works on a fresh install, when the source and asset folders do not exist yet.
 - Gemini uploads that end FAILED or never become ACTIVE are deleted.
 - Oversized downloads raise a structured `download_too_large` error, so the yt-dlp fallback runs.
