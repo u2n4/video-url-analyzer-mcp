@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from types import SimpleNamespace
 
 import pytest
@@ -17,6 +18,35 @@ def test_windows_command_reaches_the_program_as_typed():
 
 def test_posix_command_is_split_with_shlex():
     assert server._command_for_subprocess("ls -la /tmp", windows=False) == ["ls", "-la", "/tmp"]
+
+
+def test_tutorial_command_reaches_subprocess_without_a_shell(monkeypatch):
+    cmd = r'python "C:\Program Files\tool\run.py" --title="My Video" C:\Users\alice\in.txt'
+    steps = {
+        "is_tutorial": True,
+        "title": "Demo",
+        "steps": [
+            {
+                "step_number": 1,
+                "description": "Run the tool",
+                "commands": [cmd],
+                "code_snippets": [],
+                "file_paths": [],
+            }
+        ],
+    }
+    calls = []
+
+    def fake_run(args, **kwargs):
+        calls.append((args, kwargs))
+        return SimpleNamespace(stdout="", stderr="", returncode=0)
+
+    monkeypatch.setattr(server.subprocess, "run", fake_run)
+    server.do_execute_tutorial_steps(json.dumps(steps), confirm=True)
+    assert len(calls) == 1
+    args, kwargs = calls[0]
+    assert args == server._command_for_subprocess(cmd)
+    assert kwargs["shell"] is False
 
 
 @pytest.mark.parametrize(
@@ -68,6 +98,25 @@ def test_failed_context_save_leaves_no_temp_file(tmp_path, monkeypatch):
     with pytest.raises(OSError, match="replace refused"):
         server._save_video_context(ctx)
     assert list(tmp_path.iterdir()) == []
+
+
+def test_each_context_save_gets_its_own_temp_path(tmp_path, monkeypatch):
+    monkeypatch.setattr(server, "VIDEO_CONTEXT_DIR", tmp_path)
+    monkeypatch.setattr(server, "_ensure_context_quality", lambda ctx: None)
+    real_replace = server._replace_with_retry
+    sources = []
+
+    def record_then_replace(src, dst, attempts=40):
+        sources.append(src)
+        real_replace(src, dst, attempts)
+
+    monkeypatch.setattr(server, "_replace_with_retry", record_then_replace)
+    ctx = SimpleNamespace(video_id="abc123xyz", model_dump=lambda: {"video_id": "abc123xyz"})
+    server._save_video_context(ctx)
+    server._save_video_context(ctx)
+    assert len(sources) == 2
+    assert sources[0] != sources[1]
+    assert json.loads((tmp_path / "abc123xyz.json").read_text(encoding="utf-8")) == {"video_id": "abc123xyz"}
 
 
 def test_replace_with_retry_moves_file_over_destination(tmp_path):
