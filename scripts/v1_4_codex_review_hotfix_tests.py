@@ -236,7 +236,7 @@ def test_existing_cached_context_still_reused():
         created_at="2025-01-01T00:00:00",
         updated_at="2025-01-01T00:00:00",
         analyzed_by="gemini",
-        model_used="gemini-flash-latest",
+        model_used="gemini-3.8-flash",
         detail="standard",
         summary="cached fixture",
         visual_summary="visual",

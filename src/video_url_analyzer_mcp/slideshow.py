@@ -808,7 +808,7 @@ def _thinking_config_for_model(model: str) -> types.ThinkingConfig | None:
     from google.genai import types
 
     normalized = _model_id(model)
-    if normalized.startswith("gemini-3"):
+    if normalized.startswith(("gemini-3", "gemini-4")):
         return types.ThinkingConfig(thinking_level=types.ThinkingLevel.HIGH)
     if normalized.startswith("gemini-2.5"):
         return types.ThinkingConfig(thinking_budget=-1)

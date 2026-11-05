@@ -15,14 +15,22 @@ class FakeClient:
     files = FakeFiles()
 
 
-def test_default_fast_model_uses_latest_gemini_flash():
-    assert server.DEFAULT_MODEL == "gemini-3.5-flash"
-    assert server.FAST_MODEL_FALLBACK == "gemini-3.5-flash"
+def test_default_models_track_current_gemini_families():
+    assert server.DEFAULT_MODEL == "gemini-3.8-flash"
+    assert server.FAST_MODEL_FALLBACK == "gemini-3.8-flash"
+    assert server.DEEP_MODEL_FALLBACK == "gemini-4-argon"
 
 
 def test_analysis_config_uses_thinking_level_for_gemini_3():
-    config = server._build_analysis_config("models/gemini-3.5-flash")
+    config = server._build_analysis_config("models/gemini-3.8-flash")
 
+    assert config.thinking_config is not None
+    assert config.thinking_config.thinking_level.value == "HIGH"
+    assert config.thinking_config.thinking_budget is None
+
+
+def test_analysis_config_uses_thinking_level_for_gemini_4():
+    config = server._build_analysis_config("gemini-4-argon")
     assert config.thinking_config is not None
     assert config.thinking_config.thinking_level.value == "HIGH"
     assert config.thinking_config.thinking_budget is None
