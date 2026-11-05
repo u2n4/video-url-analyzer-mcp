@@ -9,20 +9,14 @@ import pytest
 from video_url_analyzer_mcp import server
 
 
-def test_windows_command_split_keeps_backslashes():
-    tokens = server._split_command_line(
-        r'python "C:\Program Files\tool\run.py" C:\Users\alice\in.txt',
-        windows=True,
-    )
-    assert tokens == [
-        "python",
-        r"C:\Program Files\tool\run.py",
-        r"C:\Users\alice\in.txt",
-    ]
+def test_windows_command_reaches_the_program_as_typed():
+    # Quoting in the middle of an argument (--title="My Video") was split apart on whitespace.
+    cmd = r'python "C:\Program Files\tool\run.py" --title="My Video" C:\Users\alice\in.txt'
+    assert server._command_for_subprocess(cmd, windows=True) == cmd
 
 
-def test_posix_command_split_is_unchanged():
-    assert server._split_command_line("ls -la /tmp", windows=False) == ["ls", "-la", "/tmp"]
+def test_posix_command_is_split_with_shlex():
+    assert server._command_for_subprocess("ls -la /tmp", windows=False) == ["ls", "-la", "/tmp"]
 
 
 @pytest.mark.parametrize(
