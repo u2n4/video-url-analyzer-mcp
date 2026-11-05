@@ -153,7 +153,7 @@ if ($apiKey) {
       exit 1
     }
     $existing = ''
-    if (Test-Path $envFile) { $existing = Get-Content $envFile -Raw }
+    if (Test-Path $envFile) { $existing = Get-Content $envFile -Raw -Encoding UTF8 }
     $rebuilt = ($existing -split "`r?`n" |
       Where-Object { $_ -and ($_ -notmatch '^\s*GEMINI_API_KEY\s*=') }) -join "`r`n"
     if ($rebuilt -and -not $rebuilt.EndsWith("`r`n")) { $rebuilt += "`r`n" }

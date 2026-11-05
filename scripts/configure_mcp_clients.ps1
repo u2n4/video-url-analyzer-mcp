@@ -134,7 +134,7 @@ function Configure-ClaudeDesktop($launch, $envBlock) {
 
   $current = $null
   if (Test-Path $configPath) {
-    try { $current = Get-Content $configPath -Raw | ConvertFrom-Json -ErrorAction Stop }
+    try { $current = Get-Content $configPath -Raw -Encoding UTF8 | ConvertFrom-Json -ErrorAction Stop }
     catch {
       # Never print the parser message: it can echo part of the file, and the file may hold keys.
       Write-Err "Existing config is not valid JSON: $configPath"
@@ -216,7 +216,7 @@ $envToml
 "@
 
   $existing = ''
-  if (Test-Path $configPath) { $existing = Get-Content $configPath -Raw }
+  if (Test-Path $configPath) { $existing = Get-Content $configPath -Raw -Encoding UTF8 }
   # Strip any prior block to avoid duplicates (idempotent)
   $stripped = [regex]::Replace($existing, '(?ms)^\s*\[mcp_servers\.video-analyzer(\.[^\]]+)?\].*?(?=^\s*\[|\Z)', '').TrimEnd()
   $newContent = ($stripped + "`r`n" + $section).TrimStart("`r`n")
@@ -252,7 +252,7 @@ function Configure-VSCode($launch, $envBlock) {
     # Merge with existing servers if present
     if (Test-Path $configPath) {
       try {
-        $existing = Get-Content $configPath -Raw | ConvertFrom-Json -ErrorAction Stop
+        $existing = Get-Content $configPath -Raw -Encoding UTF8 | ConvertFrom-Json -ErrorAction Stop
         if ($existing.PSObject.Properties.Name -contains 'servers') {
           $existing.servers | Add-Member -NotePropertyName 'video-analyzer' -NotePropertyValue ([pscustomobject]$entry) -Force
           $json = $existing | ConvertTo-Json -Depth 10
