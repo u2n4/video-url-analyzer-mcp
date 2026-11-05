@@ -318,6 +318,35 @@ BLOCKED_TUTORIAL_COMMANDS = [
     "git -c alias.x=!cmd x",
     "git -C /tmp -c alias.x=!cmd x",
     "git --config-env=alias.x=VAR x",
+    # git: only -C <path> may come before the subcommand, and only listed subcommands run
+    "git grep -c needle",
+    "git config x y",
+    "git push origin main",
+    "git -c a=b status",
+    "git --git-dir=/x status",
+    "git --exec-path=/x status",
+    "git",
+    "git -C",
+    "git clone -c core.x=y https://example.com/x.git",
+    "git clone --config core.x=y https://example.com/x.git",
+    "git fetch --upload-pack=x origin",
+    "git pull -u origin main",
+    "git pull --upload-pack x origin",
+    # npm and pip: exact subcommands, and no --script-shell
+    "npm exec x",
+    "npm config set script-shell x",
+    "npm run x --script-shell=/bin/sh",
+    "npm install --script-shell=/bin/sh",
+    "pip download x",
+    "pip config set x y",
+    "pip3 uninstall x",
+    "python -m pip config set x y",
+    "python -m pip download x",
+    # a path is not a program name
+    "./git status",
+    "/tmp/python script.py",
+    "bin/npm install",
+    r"C:\x\python.exe script.py",
 ]
 
 SAFE_TUTORIAL_COMMANDS = [
@@ -339,6 +368,21 @@ SAFE_TUTORIAL_COMMANDS = [
     "pip3 install x",
     "git clone https://github.com/example/repo.git",
     'git -C "/tmp/my repo" status',
+    "git -C /tmp status",
+    "git switch -c feature",
+    "git log --oneline",
+    "git diff HEAD",
+    "git checkout main",
+    "git branch -a",
+    "git add .",
+    "git commit -m message",
+    "git fetch origin",
+    "git pull origin main",
+    "npm ci",
+    "npm test",
+    "pip list",
+    "pip show requests",
+    "python -m pip list",
 ]
 
 @pytest.fixture(autouse=True)
@@ -486,22 +530,39 @@ def test_pattern_refusal_names_the_matched_text():
     assert "'shutdown'" in _refusal("npm run shutdown")
 
 
-def test_program_name_follows_the_platform_path_rules():
-    assert server._program_name(r"C:\tools\git.exe", windows=True) == "git"
-    assert server._program_name("/usr/bin/git", windows=False) == "git"
-    assert server._program_name(r"./unlisted\git", windows=False) == r"unlisted\git"
+def test_program_name_is_lowercased_without_exe():
+    assert server._program_name("Python.EXE") == "python"
+    assert server._program_name("git") == "git"
 
 
-def test_backslash_in_a_posix_program_name_is_not_a_separator():
+def test_backslash_in_a_posix_program_name_is_refused():
     assert _refusal(r"'./unlisted\git' status") is not None
 
 
-def test_windows_path_to_python_is_not_a_posix_program_name():
-    # On POSIX the backslashes are part of the name, so this is not python.
+def test_windows_path_to_python_is_refused_on_posix():
     assert _refusal(r'"C:\Program Files\Python\python.exe" script.py') is not None
 
 
+@pytest.mark.parametrize("cmd", ["./git status", "/tmp/python script.py", "bin/npm install"])
+def test_paths_are_refused_and_the_message_says_bare_names_only(cmd):
+    assert "only bare program names run" in _refusal(cmd)
+
+
 @windows_only
-def test_quoted_windows_path_to_python_runs_as_python():
-    cmd = r'"C:\Program Files\Python\python.exe" script.py'
-    assert _refusal(cmd, windows=True) is None
+def test_windows_paths_are_refused_and_the_message_says_bare_names_only():
+    for cmd in (
+        r'"C:\Program Files\Python\python.exe" script.py',
+        r"C:\x\python.exe script.py",
+    ):
+        assert "only bare program names run" in _refusal(cmd, windows=True)
+
+
+def test_environment_program_does_not_change_subcommand_rules(monkeypatch):
+    monkeypatch.setenv(server.ALLOWED_PROGRAMS_ENV, "npm")
+    assert _refusal("npm exec x") is not None
+    assert _refusal("npm install") is None
+
+
+def test_environment_entry_that_is_a_path_never_matches(monkeypatch):
+    monkeypatch.setenv(server.ALLOWED_PROGRAMS_ENV, "./ffmpeg")
+    assert _refusal("./ffmpeg -version") is not None
