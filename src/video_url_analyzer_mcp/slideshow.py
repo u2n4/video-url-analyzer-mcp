@@ -14,7 +14,7 @@ from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, cast
-from urllib.parse import urlparse
+from urllib.parse import urljoin, urlparse
 
 import yt_dlp
 
@@ -329,16 +329,49 @@ def _audio_suffix(url: str, content_type: str | None = None) -> str:
     return suffix if suffix in AUDIO_EXTENSIONS else ".mp3"
 
 
+_REDIRECT_STATUS_CODES = {301, 302, 303, 307, 308}
+_MAX_MEDIA_REDIRECTS = 5
+
+
+def _get_media_with_checked_redirects(
+    cffi_requests: Any,
+    url: str,
+    *,
+    timeout: int,
+    headers: dict[str, str],
+):
+    """GET a media URL, validating every redirect target against the host allowlist.
+
+    Redirects are not followed automatically. Otherwise an allowlisted CDN URL
+    that redirects to a private or metadata address would pass the check made
+    on the first URL only.
+    """
+    current = _validate_download_url(url)
+    for _ in range(_MAX_MEDIA_REDIRECTS + 1):
+        response = cffi_requests.get(
+            current,
+            impersonate="chrome",
+            timeout=timeout,
+            headers=headers,
+            allow_redirects=False,
+        )
+        location = response.headers.get("location")
+        if response.status_code not in _REDIRECT_STATUS_CODES or not location:
+            return response
+        current = _validate_download_url(urljoin(current, location))
+    raise SlideshowError("Too many redirects while downloading media.")
+
+
 def _download_image_atomic(url: str, final_path: Path, timeout: int = 60) -> Path:
     try:
         from curl_cffi import requests as cffi_requests
     except ImportError as exc:
         raise SlideshowError("curl_cffi is required to download slideshow images.") from exc
 
-    media_url = _validate_download_url(_normalize_media_url(url))
-    response = cffi_requests.get(
+    media_url = _normalize_media_url(url)
+    response = _get_media_with_checked_redirects(
+        cffi_requests,
         media_url,
-        impersonate="chrome",
         timeout=timeout,
         headers={"User-Agent": USER_AGENT, "Accept": "image/avif,image/webp,image/*,*/*;q=0.8"},
     )
@@ -372,10 +405,10 @@ def _download_audio_atomic(url: str, final_path: Path, timeout: int = 120) -> Pa
     except ImportError as exc:
         raise SlideshowError("curl_cffi is required to download slideshow audio.") from exc
 
-    media_url = _validate_download_url(_normalize_media_url(url))
-    response = cffi_requests.get(
+    media_url = _normalize_media_url(url)
+    response = _get_media_with_checked_redirects(
+        cffi_requests,
         media_url,
-        impersonate="chrome",
         timeout=timeout,
         headers={"User-Agent": USER_AGENT, "Accept": "audio/*,video/mp4,*/*;q=0.8"},
     )

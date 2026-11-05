@@ -10,6 +10,7 @@ import tempfile
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
+from urllib.error import HTTPError
 from urllib.parse import urlparse
 from urllib.request import Request as UrllibRequest
 from urllib.request import urlopen as urllib_urlopen
@@ -82,13 +83,17 @@ def _fetch_text(url: str, timeout: int = 30) -> str:
             "Accept-Language": "en-US,en;q=0.9",
         },
     )
-    with urllib_urlopen(req, timeout=timeout) as resp:
-        if getattr(resp, "status", 200) == 429:
-            raise CommunityPostError("YouTube returned HTTP 429 while loading the community post.")
-        content_type = resp.headers.get("content-type", "")
-        if "text/html" not in content_type:
-            raise CommunityPostError(f"Unexpected YouTube page content-type: {content_type}")
-        return resp.read().decode("utf-8", errors="replace")
+    try:
+        with urllib_urlopen(req, timeout=timeout) as resp:
+            content_type = resp.headers.get("content-type", "")
+            if "text/html" not in content_type:
+                raise CommunityPostError(f"Unexpected YouTube page content-type: {content_type}")
+            return resp.read().decode("utf-8", errors="replace")
+    except HTTPError as exc:
+        # urlopen raises HTTPError for every non-2xx status, so the status is handled here.
+        raise CommunityPostError(
+            f"YouTube returned HTTP {exc.code} while loading the community post."
+        ) from exc
 
 
 def _extract_json_object(text: str, open_brace_index: int) -> str:
