@@ -68,3 +68,16 @@ testpaths = ["tests"]
 markers = [
   "network: tests that hit public social/video URLs",
 ]
+
+[dependency-groups]
+dev = [
+    "pyright>=1.1.390",
+    "pytest>=8.3",
+    "ruff>=0.8",
+]
+
+[tool.ruff.lint]
+# Correctness rules only. Ruff's current default set flags style and the
+# deliberate broad exception handlers in this server (107 findings), which
+# kept the lint step red and hid the pyright and test results behind it.
+select = ["E4", "E7", "E9", "F"]

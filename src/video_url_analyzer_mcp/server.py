@@ -274,7 +274,7 @@ def _thinking_config_for_model(
     normalized = _model_id(model)
     name = thinking_name.strip().lower()
     if normalized.startswith("gemini-3"):
-        return types.ThinkingConfig(thinking_level=name)
+        return types.ThinkingConfig(thinking_level=types.ThinkingLevel(name.upper()))
     if normalized.startswith("gemini-2.5"):
         budget_by_level = {
             "minimal": 0,
@@ -1414,7 +1414,7 @@ def _download_video(url: str) -> list[str]:
 
     if platform in ("tiktok", "instagram"):
         chrome_impersonation = ImpersonateTarget.from_str("chrome")
-        strategies = [
+        strategies: list[tuple[str, dict[str, Any]]] = [
             ("impersonate only", {"impersonate": chrome_impersonation}),
         ]
         if ENABLE_BROWSER_COOKIES:
