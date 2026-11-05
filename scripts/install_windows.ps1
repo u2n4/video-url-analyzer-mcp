@@ -30,9 +30,9 @@ function Write-Warn($msg)    { Write-Host "[install] $msg" -ForegroundColor Yell
 function Write-Err($msg)     { Write-Host "[install] $msg" -ForegroundColor Red }
 
 function Get-MaskedKey([string]$key) {
+  # Reveal nothing about the key, not even its first or last characters.
   if ([string]::IsNullOrWhiteSpace($key)) { return '<empty>' }
-  if ($key.Length -le 8) { return ('*' * $key.Length) }
-  return ($key.Substring(0, 4) + '...' + $key.Substring($key.Length - 4))
+  return ('*' * 8) + " ($($key.Length) characters)"
 }
 
 function Read-Choice([string]$prompt, [string[]]$options, [int]$default = 1) {
@@ -82,6 +82,10 @@ if (-not $python) {
 }
 $pyVer = & $python.Source -c "import sys; print('.'.join(map(str, sys.version_info[:3])))"
 Write-Ok "Python detected: $pyVer ($($python.Source))"
+if ([version]($pyVer.Trim()) -lt [version]'3.10') {
+  Write-Err "Python 3.10 or newer is required. Detected: $pyVer"
+  exit 1
+}
 
 $uv = Get-Command uv -ErrorAction SilentlyContinue
 if ($uv) {
@@ -154,7 +158,7 @@ if ($apiKey) {
       Where-Object { $_ -and ($_ -notmatch '^\s*GEMINI_API_KEY\s*=') }) -join "`r`n"
     if ($rebuilt -and -not $rebuilt.EndsWith("`r`n")) { $rebuilt += "`r`n" }
     $rebuilt += "GEMINI_API_KEY=$apiKey`r`n"
-    Set-Content -Path $envFile -Value $rebuilt -NoNewline -Encoding UTF8
+    [System.IO.File]::WriteAllText($envFile, $rebuilt, (New-Object System.Text.UTF8Encoding $false))
     Write-Ok "Wrote $envFile (gitignored). Masked key: $masked"
   }
 } else {

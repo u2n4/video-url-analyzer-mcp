@@ -106,8 +106,19 @@ function New-McpEntry($launch, $envBlock) {
 # ---------------------------------------------------------------------------
 # Claude Desktop  (%APPDATA%\Claude\claude_desktop_config.json)
 # ---------------------------------------------------------------------------
+function Get-ClaudeDesktopConfigDir {
+  # Microsoft Store builds read a packaged folder, not %APPDATA%\Claude.
+  $pkg = Get-ChildItem (Join-Path $env:LOCALAPPDATA 'Packages') -Filter 'Claude_*' -Directory -ErrorAction SilentlyContinue |
+    Select-Object -First 1
+  if ($pkg) {
+    $roaming = Join-Path $pkg.FullName 'LocalCache\Roaming\Claude'
+    if (Test-Path $roaming) { return $roaming }
+  }
+  return (Join-Path $env:APPDATA 'Claude')
+}
+
 function Configure-ClaudeDesktop($launch, $envBlock) {
-  $configDir = Join-Path $env:APPDATA 'Claude'
+  $configDir = Get-ClaudeDesktopConfigDir
   $configPath = Join-Path $configDir 'claude_desktop_config.json'
   Write-Info "Claude Desktop config: $configPath"
 
@@ -124,7 +135,12 @@ function Configure-ClaudeDesktop($launch, $envBlock) {
   $current = $null
   if (Test-Path $configPath) {
     try { $current = Get-Content $configPath -Raw | ConvertFrom-Json -ErrorAction Stop }
-    catch { Write-Warn "Existing JSON is invalid; starting fresh."; $current = $null }
+    catch {
+      # Never print the parser message: it can echo part of the file, and the file may hold keys.
+      Write-Err "Existing config is not valid JSON: $configPath"
+      Write-Err "Refusing to rewrite it, because that would drop your other MCP servers. Fix or delete the file, then re-run."
+      return
+    }
   }
   if (-not $current) { $current = [pscustomobject]@{ mcpServers = [pscustomobject]@{} } }
   if (-not ($current.PSObject.Properties.Name -contains 'mcpServers')) {
@@ -140,7 +156,7 @@ function Configure-ClaudeDesktop($launch, $envBlock) {
   $json = $current | ConvertTo-Json -Depth 10
   try { $null = $json | ConvertFrom-Json } catch { Write-Err "Generated JSON is invalid; refusing to write."; return }
 
-  Set-Content -Path $configPath -Value $json -Encoding UTF8
+  [System.IO.File]::WriteAllText($configPath, $json, (New-Object System.Text.UTF8Encoding $false))
   Write-Ok "Updated $configPath. Restart Claude Desktop to load the new server."
 }
 
@@ -152,7 +168,7 @@ function Configure-ClaudeCode($launch, $envBlock) {
   if ($envBlock.Count -gt 0) {
     $envFlags = ($envBlock.GetEnumerator() | ForEach-Object { "-e $($_.Key)=$($_.Value)" }) -join ' '
   }
-  $cmd = $launch.command
+  $cmd = '"' + $launch.command + '"'
   $argString = ($launch.args | ForEach-Object { '"' + $_ + '"' }) -join ' '
   Write-Info "Run this from any shell to register the MCP server with Claude Code:"
   Write-Host ""
@@ -163,6 +179,11 @@ function Configure-ClaudeCode($launch, $envBlock) {
 # ---------------------------------------------------------------------------
 # Codex CLI  (~/.codex/config.toml)
 # ---------------------------------------------------------------------------
+function ConvertTo-TomlString([string]$value) {
+  # Literal replacements: backslash first, then quote. Output is a TOML basic string.
+  '"' + ($value.Replace('\', '\\').Replace('"', '\"')) + '"'
+}
+
 function Configure-Codex($launch, $envBlock) {
   $configDir = Join-Path $env:USERPROFILE '.codex'
   $configPath = Join-Path $configDir 'config.toml'
@@ -178,7 +199,8 @@ function Configure-Codex($launch, $envBlock) {
 
   Backup-File $configPath | Out-Null
 
-  $argsToml = ($launch.args | ForEach-Object { '"' + $_ + '"' }) -join ', '
+  $argsToml = (($launch.args | ForEach-Object { ConvertTo-TomlString $_ }) -join ', ')
+  $cmdToml = ConvertTo-TomlString $launch.command
   $envToml = ''
   if ($envBlock.Count -gt 0) {
     $pairs = $envBlock.GetEnumerator() | ForEach-Object { '"' + $_.Key + '" = "' + $_.Value + '"' }
@@ -188,7 +210,7 @@ function Configure-Codex($launch, $envBlock) {
   $section = @"
 
 [mcp_servers.video-analyzer]
-command = "$($launch.command -replace '\\','\\\\')"
+command = $cmdToml
 args = [$argsToml]
 $envToml
 "@
@@ -196,10 +218,10 @@ $envToml
   $existing = ''
   if (Test-Path $configPath) { $existing = Get-Content $configPath -Raw }
   # Strip any prior block to avoid duplicates (idempotent)
-  $stripped = [regex]::Replace($existing, '(?ms)^\s*\[mcp_servers\.video-analyzer\].*?(?=^\s*\[|\Z)', '').TrimEnd()
+  $stripped = [regex]::Replace($existing, '(?ms)^\s*\[mcp_servers\.video-analyzer(\.[^\]]+)?\].*?(?=^\s*\[|\Z)', '').TrimEnd()
   $newContent = ($stripped + "`r`n" + $section).TrimStart("`r`n")
 
-  Set-Content -Path $configPath -Value $newContent -Encoding UTF8
+  [System.IO.File]::WriteAllText($configPath, $newContent, (New-Object System.Text.UTF8Encoding $false))
   Write-Ok "Updated $configPath. Restart Codex CLI to load the new server."
 }
 
@@ -239,7 +261,7 @@ function Configure-VSCode($launch, $envBlock) {
     }
 
     try { $null = $json | ConvertFrom-Json } catch { Write-Err "Generated JSON is invalid."; return }
-    Set-Content -Path $configPath -Value $json -Encoding UTF8
+    [System.IO.File]::WriteAllText($configPath, $json, (New-Object System.Text.UTF8Encoding $false))
     Write-Ok "Wrote $configPath. Reload VS Code window to pick it up."
   } else {
     Write-Info "Add this to your VS Code user MCP config (Command Palette: 'MCP: Open User Configuration'):"

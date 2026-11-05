@@ -60,9 +60,9 @@ function Write-Warn($m) { Write-Host "[install] $m" -ForegroundColor Yellow }
 function Write-Err($m)  { Write-Host "[install] $m" -ForegroundColor Red }
 
 function Get-MaskedKey([string]$key) {
+  # Reveal nothing about the key, not even its first or last characters.
   if ([string]::IsNullOrWhiteSpace($key)) { return '<empty>' }
-  if ($key.Length -le 8) { return ('*' * $key.Length) }
-  return ($key.Substring(0, 4) + '...' + $key.Substring($key.Length - 4))
+  return ('*' * 8) + " ($($key.Length) characters)"
 }
 
 function Confirm-Yes([string]$prompt, [bool]$default = $true) {
@@ -217,7 +217,12 @@ function Configure-ClaudeDesktop([string]$key, [string]$uvxCmd) {
   $current = $null
   if (Test-Path $cfg) {
     try { $current = Get-Content $cfg -Raw | ConvertFrom-Json -ErrorAction Stop }
-    catch { Write-Warn "Existing JSON invalid; starting fresh."; $current = $null }
+    catch {
+      # Never print the parser message: it can echo part of the file, and the file may hold keys.
+      Write-Err "Existing config is not valid JSON: $cfg"
+      Write-Err "Refusing to rewrite it, because that would drop your other MCP servers. Fix or delete the file, then re-run."
+      return
+    }
   }
   if (-not $current) { $current = [pscustomobject]@{ mcpServers = [pscustomobject]@{} } }
   if (-not ($current.PSObject.Properties.Name -contains 'mcpServers')) {
@@ -236,7 +241,7 @@ function Configure-ClaudeDesktop([string]$key, [string]$uvxCmd) {
 
   $json = $current | ConvertTo-Json -Depth 12
   try { $null = $json | ConvertFrom-Json } catch { Write-Err "Generated JSON invalid; refusing to write."; return }
-  Set-Content -Path $cfg -Value $json -Encoding UTF8
+  [System.IO.File]::WriteAllText($cfg, $json, (New-Object System.Text.UTF8Encoding $false))
   Write-Ok "Updated $cfg. Restart Claude Desktop to load the server."
 }
 
@@ -265,14 +270,17 @@ function Configure-Codex([string]$key, [string]$uvxCmd) {
   $stripped = [regex]::Replace($existing, $pattern, '').TrimEnd()
   $newContent = ($stripped + "`r`n" + $section).TrimStart("`r`n")
 
-  Set-Content -Path $cfg -Value $newContent -Encoding UTF8
+  [System.IO.File]::WriteAllText($cfg, $newContent, (New-Object System.Text.UTF8Encoding $false))
 
   # Validate TOML if Python is available; otherwise warn but keep the backup.
   $py = Get-Command python -ErrorAction SilentlyContinue
   if (-not $py) { $py = Get-Command py -ErrorAction SilentlyContinue }
   if ($py) {
     $check = & $py.Source -c "import tomllib,sys; tomllib.load(open(sys.argv[1],'rb')); print('OK')" $cfg 2>&1
-    if ($check -notmatch 'OK') {
+    if ($check -like '*ModuleNotFoundError*') {
+      # tomllib arrived in Python 3.11; on 3.10 the file is kept and must be checked by hand.
+      Write-Warn "Codex TOML could not be validated: this Python has no tomllib (3.11+). The file was written; check it by hand."
+    } elseif ($check -notmatch 'OK') {
       Write-Err "Codex TOML failed validation after edit. Restore from the .bak file:"
       Write-Host $check
       return
@@ -326,7 +334,7 @@ function Configure-JsonClient {
 
   $json = $current | ConvertTo-Json -Depth 12
   try { $null = $json | ConvertFrom-Json } catch { Write-Err "$Label JSON would be invalid; refusing to write."; return }
-  Set-Content -Path $Path -Value $json -Encoding UTF8
+  [System.IO.File]::WriteAllText($Path, $json, (New-Object System.Text.UTF8Encoding $false))
   Write-Ok "Updated $Path. Restart $Label to load the server."
 }
 
@@ -382,7 +390,7 @@ function Configure-VSCode([string]$key, [string]$uvxCmd) {
 
   $json = $current | ConvertTo-Json -Depth 12
   try { $null = $json | ConvertFrom-Json } catch { Write-Err "VS Code JSON would be invalid; refusing to write."; return }
-  Set-Content -Path $cfg -Value $json -Encoding UTF8
+  [System.IO.File]::WriteAllText($cfg, $json, (New-Object System.Text.UTF8Encoding $false))
   Write-Ok "Updated $cfg. VS Code will prompt for the Gemini key when the server starts."
 }
 function Configure-Cline([string]$key, [string]$uvxCmd) {
