@@ -5354,17 +5354,16 @@ _BLOCKED_COMMANDS = re.compile(
 )
 
 
-def _split_command_line(cmd: str, windows: bool = os.name == "nt") -> list[str]:
-    """Split a command line into argv without a shell.
+def _command_for_subprocess(cmd: str, windows: bool = os.name == "nt") -> str | list[str]:
+    """Return the subprocess argument for a tutorial command, with shell=False.
 
-    POSIX shlex treats backslash as an escape character, which removes the
-    separators from Windows paths. On Windows the quotes are kept while
-    splitting and removed from each token afterwards.
+    On Windows the command line goes to CreateProcess unchanged, so each program
+    parses its own quoting as the author typed it. POSIX commands are split with
+    shlex, which matches shell escaping there.
     """
-    if not windows:
-        return shlex.split(cmd)
-    tokens = shlex.split(cmd, posix=False)
-    return [t[1:-1] if len(t) >= 2 and t[0] == t[-1] == '"' else t for t in tokens]
+    if windows:
+        return cmd
+    return shlex.split(cmd)
 
 
 def _validate_command(cmd: str) -> bool:
@@ -5715,7 +5714,7 @@ def do_execute_tutorial_steps(
                 continue
             try:
                 result = subprocess.run(
-                    _split_command_line(cmd),
+                    _command_for_subprocess(cmd),
                     shell=False,
                     capture_output=True,
                     text=True,
